@@ -2,6 +2,8 @@
 #include "Pipeline.h"
 #include "RootSignature.h"
 #include "Mesh.h"
+#include "RenderBackend.h"
+#include "Settings.h"
 #include <iostream>
 
 #define SIMPLE_TEST false
@@ -15,7 +17,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 }
 
-void MinimalDXApp::createWindow(HINSTANCE hInstance, int nCmdShow)
+void MinimalDXApp::CreateDisplayWindow(HINSTANCE hInstance, int nCmdShow)
 {
 	// Populate the WindowProperties struct with stuff copied from GPT.
 	// Not gonna bother figuring out how the window is made. Not the priority here.
@@ -26,14 +28,14 @@ void MinimalDXApp::createWindow(HINSTANCE hInstance, int nCmdShow)
 	wc.lpszClassName = L"DX12WindowClass";
 	RegisterClassEx(&wc);
 
-	mWindowProperties.mHeight = 720;
-	mWindowProperties.mWidth = 1280;
-	mWindowProperties.aspectRatio = static_cast<float>(mWindowProperties.mWidth) / static_cast<float>(mWindowProperties.mHeight);
+	windowProperties.mHeight = 720;
+	windowProperties.mWidth = 1280;
+	windowProperties.aspectRatio = static_cast<float>(windowProperties.mWidth) / static_cast<float>(windowProperties.mHeight);
 
-	RECT rect = {0, 0, (LONG)mWindowProperties.mWidth, (LONG)mWindowProperties.mHeight};
+	RECT rect = {0, 0, (LONG)windowProperties.mWidth, (LONG)windowProperties.mHeight};
 	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
-	mWindowProperties.g_hWnd = CreateWindow(
+	windowProperties.g_hWnd = CreateWindow(
 		wc.lpszClassName,
 		L"DirectX 12 Triangle",
 		WS_OVERLAPPEDWINDOW,
@@ -43,7 +45,7 @@ void MinimalDXApp::createWindow(HINSTANCE hInstance, int nCmdShow)
 		nullptr, nullptr, hInstance, nullptr
 	);
 
-	ShowWindow(mWindowProperties.g_hWnd, nCmdShow);
+	ShowWindow(windowProperties.g_hWnd, nCmdShow);
 }
 
 
@@ -52,7 +54,7 @@ Very straightforward program, goes over the esssential basics to making sure our
 The code works in a very sequential order, initializing everything important we need.
 I think there should be a destructor of some sort implemented later on, but we'll worry about it later.
 */
-void MinimalDXApp::initializeDX()
+void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 {
 	UINT factoryFlags = 0;
 
@@ -74,13 +76,13 @@ void MinimalDXApp::initializeDX()
 	// Begin with the DXGI Factory.
 	// DXGI is the bridge between GPU/driver and the code
 	// Not sure what IID_PPV_ARGS does, but returns interface pointer... whatever that means
-	CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&mFactory));
+	CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&factory));
 
 	// I do need to check that this isn't my integrated graphics, I might have multiple adapters
-	mFactory->EnumAdapters1(0, &mAdapter);
+	factory->EnumAdapters1(0, &adapter);
 	
 	// Create the device
-	D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mDevice));
+	D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
 
 	{
 		// Create Command Queue, requires a description. This is pretty similar to Vulkan!
@@ -95,16 +97,16 @@ void MinimalDXApp::initializeDX()
 		// - Copy: ? Not sure, just repsonsible for copying memory between resources on GPU
 		commandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		commandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		mDevice->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&mCommandQueue));
+		device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&commandQueue));
 	}
 
 	// Create swap chain
 	{
 		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-		swapChainDesc.BufferCount = mFrameCount;
-		swapChainDesc.Width = mWindowProperties.mWidth;
-		swapChainDesc.Height = mWindowProperties.mHeight;
-		swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		swapChainDesc.BufferCount = frameCount;
+		swapChainDesc.Width = windowProperties.mWidth;
+		swapChainDesc.Height = windowProperties.mHeight;
+		swapChainDesc.Format = settings.isHDR ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
 
 		// The frames in this swap chain have render target writing capability
 		// Retrieved buffers are called back-buffers, written to and then later drawn to the screen
@@ -114,21 +116,24 @@ void MinimalDXApp::initializeDX()
 		// This has to do with multisampling I think?
 		swapChainDesc.SampleDesc.Count = 1;
 	
-		ComPtr<IDXGISwapChain1> swapChain;
-		mFactory->CreateSwapChainForHwnd(
-			mCommandQueue.Get(), 
-			mWindowProperties.g_hWnd,
+		ComPtr<IDXGISwapChain1> swapChainPtr;
+		factory->CreateSwapChainForHwnd(
+			commandQueue.Get(), 
+			windowProperties.g_hWnd,
 			&swapChainDesc,
 			nullptr,
 			nullptr,
-			&swapChain
+			&swapChainPtr
 		);
 
-		swapChain.As(&mSwapChain);
+		swapChainPtr.As(&swapChain);
 	}
 
-	mFrameIndex = mSwapChain->GetCurrentBackBufferIndex();
+	frameIndex = swapChain->GetCurrentBackBufferIndex();
 
+	ResourceManager::CreateGlobalDescriptorHeaps( device, globalDescriptorHeaps );
+
+	// todo: replace all of this descriptor junk with the global data
 	// Create RTV Descriptor Heap + Texture Heap for our awesome texture
 	{
 		// I'm afraid this gets a bit complicated when we want to do stuff like
@@ -137,12 +142,12 @@ void MinimalDXApp::initializeDX()
 		// UAV - Unordered Resource View
 		// RTV - Render Target View
 		D3D12_DESCRIPTOR_HEAP_DESC RTVDescriptorHeapDesc = {};
-		RTVDescriptorHeapDesc.NumDescriptors = mFrameCount;
+		RTVDescriptorHeapDesc.NumDescriptors = frameCount;
 		RTVDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 		RTVDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		mDevice->CreateDescriptorHeap(&RTVDescriptorHeapDesc, IID_PPV_ARGS(&mRTVDescriptorHeap));
+		device->CreateDescriptorHeap(&RTVDescriptorHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap));
 		
-		mRTVDescriptorSize = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 		// So yes, I was correct that this part gets complicated when we add SRV heaps. My question, though, is that if we 
 		// want to bind multiple textures, does it just require one heap, or many?
@@ -156,38 +161,38 @@ void MinimalDXApp::initializeDX()
 		// Descriptor is a metadata record. Stored in the descriptor heap
 		// This should be called the textureHeap or something in the future, should I add more textures to it
 		// Updating SRVHeapDesc to contain 3 now for our simple PathTracing app.
-		// Slot 0: UAV, mScreenTexture
+		// Slot 0: UAV, screenTexture
 		// Slot 1: SRV, for the scene geo and camera info
-		// Slot 2: SRV, view for the mScreenTexture
+		// Slot 2: SRV, view for the screenTexture
 		shaderResourceHeapDesc.NumDescriptors = 3;
 		shaderResourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		shaderResourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		mDevice->CreateDescriptorHeap(&shaderResourceHeapDesc, IID_PPV_ARGS(&mShaderResourceHeap));
-		mShaderResourceDescriptorSize = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		device->CreateDescriptorHeap(&shaderResourceHeapDesc, IID_PPV_ARGS(&shaderResourceHeap));
+		shaderResourceDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	}
 
 	// Create frame resources in the swap chain, can we think of this as populating frame data per backbuffer in the swapchain?
 	{
-		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = mRTVDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 
-		for (uint32_t i = 0; i < mFrameCount; i++)
+		for (uint32_t i = 0; i < frameCount; i++)
 		{
-			mSwapChain->GetBuffer(i, IID_PPV_ARGS(&mRenderTargets[i]));
-			mDevice->CreateRenderTargetView(mRenderTargets[i].Get(), nullptr, rtvHandle);
-			rtvHandle.ptr += mRTVDescriptorSize;
+			swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
+			device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtvHandle);
+			rtvHandle.ptr += rtvDescriptorSize;
 		}
 	}
 
-	// Might need a reminder of mCommandAllocator's purpose?
-	mDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocator));
+	// Might need a reminder of commandAllocator's purpose?
+	device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
 
 	// Create synchronization stage
 	{
-		mDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence));
-		mFenceValue = 1;
-		mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		if (mFenceEvent == nullptr)
+		device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+		fenceValue = 1;
+		fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+		if (fenceEvent == nullptr)
 		{
 			// TODO: Need some error handling/validation
 		}
@@ -196,67 +201,18 @@ void MinimalDXApp::initializeDX()
 
 
 // Responsible for PSO creation and compiling vert/pixel shaders
-void MinimalDXApp::loadAssets()
+void MinimalDXApp::BuildTaskList()
 {
 	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
-
-	RootSignature::createBlitRootSignature(
-		mDevice,
-		drawScreen->mRootSignature
-	);
-
-	Pipeline::createPSO(
-		mDevice,
-		drawScreen->mRootSignature,
-		drawScreen->mPipelineState,
-		L"vsTriangle.hlsl",
-		L"psBlit.hlsl"
-	);
-
-	// We need to make the command list that'll execute based off of the PSO we made
-	mDevice->CreateCommandList(
-		0, 
-		D3D12_COMMAND_LIST_TYPE_DIRECT, 
-		mCommandAllocator.Get(), 
-		drawScreen->mPipelineState.Get(), 
-		IID_PPV_ARGS(&mCommandList)
-	);
-	
-	// Immediately close it since we're not recording anything
-	mCommandList->Close();
-
-	// Create drawScreen mesh information
 	{
-		float aspectRatio = mWindowProperties.aspectRatio;
-
-		std::vector<Vertex> triangleVertices =
-        {
-			{ { -1.0f, -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-			{ { -1.0f, 3.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, -1.0f } },
-			{ { 3.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, { 2.0f, 1.0f } }
-        };
-
-		const uint32_t vertexBufferSize = static_cast<uint32_t>(triangleVertices.size() * sizeof(Vertex));
-
-		Mesh helloTriangleMesh = Mesh(triangleVertices, vertexBufferSize);
-
-		// Vertex buffer data upload call
-		helloTriangleMesh.UploadMeshBuffer(
-			mDevice,
-			drawScreen->mVertexBuffer,
-			drawScreen->mVertexBufferUpload,
-			drawScreen->mVertexBufferView,
-			mCommandAllocator,
-			mCommandList,
-			mCommandQueue,
-			drawScreen->mPipelineState
-		);
-		
-		waitForPreviousFrame();
-
-		// Reset this until we need to do another vertex buffer upload, not needed anymore since we copied relevant info over
-		drawScreen->mVertexBufferUpload.Reset();
+		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
+		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
+		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
 	}
+	Gfx::CreateDrawTask( this, drawScreen.get() );
+	
+	// ? why is this here and not at the top of BuildTaskList?
+	commandList->Close();
 
 	{
 		// TODO:
@@ -272,23 +228,23 @@ void MinimalDXApp::loadAssets()
 		std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
 
 		RootSignature::createPathTracingRootSignature(
-			mDevice,
-			pathTraceTask->mRootSignature
+			device,
+			pathTraceTask->rootSignature
 		);
 
 		Pipeline::createComputePSO(
-			mDevice,
-			pathTraceTask->mRootSignature,
-			pathTraceTask->mPipelineState,
-			L"csPathTracer.hlsl",
+			device,
+			pathTraceTask->rootSignature,
+			pathTraceTask->pipelineState,
+			"csPathTracer.hlsl",
 			"CSMain"
 		);
 		
 		D3D12_RESOURCE_DESC textureDesc = {};
 		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		textureDesc.MipLevels = 1;
-		textureDesc.Width = mWindowProperties.mWidth;
-		textureDesc.Height = mWindowProperties.mHeight;
+		textureDesc.Width = windowProperties.mWidth;
+		textureDesc.Height = windowProperties.mHeight;
 		textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 		textureDesc.DepthOrArraySize = 1;
 		textureDesc.SampleDesc.Count = 1;
@@ -297,16 +253,16 @@ void MinimalDXApp::loadAssets()
 
 		// Resource state initial at PS_Resource, s.t we go PS -> UA -> PS per frame
 		CD3DX12_HEAP_PROPERTIES defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-		mDevice->CreateCommittedResource(
+		device->CreateCommittedResource(
 			&defaultHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&textureDesc,
 			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
 			nullptr,
-			IID_PPV_ARGS(&mScreenTexture)
+			IID_PPV_ARGS(&screenTexture)
 		);
 
-		mScreenTexture->SetName(L"Screen Texture");
+		screenTexture->SetName(L"Screen Texture");
 
 		CameraConstants cameraConstants = {};
 		pathTraceTask->mCameraConstants = cameraConstants;
@@ -315,7 +271,7 @@ void MinimalDXApp::loadAssets()
 		const UINT cameraCBSize = (sizeof(CameraConstants) + 255) & ~255;
 		CD3DX12_HEAP_PROPERTIES uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 		CD3DX12_RESOURCE_DESC cameraCBDesc = CD3DX12_RESOURCE_DESC::Buffer(cameraCBSize);
-		mDevice->CreateCommittedResource(
+		device->CreateCommittedResource(
 			&uploadHeapProperties,
 			D3D12_HEAP_FLAG_NONE,
 			&cameraCBDesc,
@@ -331,30 +287,30 @@ void MinimalDXApp::loadAssets()
 		memcpy(pathTraceTask->mCameraConstantBufferData, &pathTraceTask->mCameraConstants, sizeof(CameraConstants));
 
 		// Walk the shader-visible heap, building a view at each reserved slot:
-		// Slot 0: UAV of mScreenTexture (compute output, u0)
+		// Slot 0: UAV of screenTexture (compute output, u0)
 		// Slot 1: reserved for scene-geo / future texture SRV (t0 in the path tracing root signature)
-		// Slot 2: SRV of mScreenTexture (sampled by drawScreen's pixel shader, t0)
-		D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = mShaderResourceHeap->GetCPUDescriptorHandleForHeapStart();
-		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = mShaderResourceHeap->GetGPUDescriptorHandleForHeapStart();
+		// Slot 2: SRV of screenTexture (sampled by drawScreen's pixel shader, t0)
+		D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = shaderResourceHeap->GetCPUDescriptorHandleForHeapStart();
+		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = shaderResourceHeap->GetGPUDescriptorHandleForHeapStart();
 
 		// Populate slot 0
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		mDevice->CreateUnorderedAccessView(mScreenTexture.Get(), nullptr, &uavDesc, cpuHandle);
+		device->CreateUnorderedAccessView(screenTexture.Get(), nullptr, &uavDesc, cpuHandle);
 		pathTraceTask->mOutputUAVHandle = gpuHandle;
 
-		cpuHandle.ptr += mShaderResourceDescriptorSize;
-		gpuHandle.ptr += mShaderResourceDescriptorSize;
+		cpuHandle.ptr += shaderResourceDescriptorSize;
+		gpuHandle.ptr += shaderResourceDescriptorSize;
 		// Slot 1 stays unpopulated until there's actual scene/texture data to view
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 		cbvDesc.BufferLocation = pathTraceTask->mCameraConstantBuffer->GetGPUVirtualAddress();
 		cbvDesc.SizeInBytes = cameraCBSize;
-		mDevice->CreateConstantBufferView(&cbvDesc, cpuHandle);
+		device->CreateConstantBufferView(&cbvDesc, cpuHandle);
 
-		cpuHandle.ptr += mShaderResourceDescriptorSize;
-		gpuHandle.ptr += mShaderResourceDescriptorSize;
+		cpuHandle.ptr += shaderResourceDescriptorSize;
+		gpuHandle.ptr += shaderResourceDescriptorSize;
 		// Populate slot 2
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -362,94 +318,94 @@ void MinimalDXApp::loadAssets()
 		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels = 1;
-		mDevice->CreateShaderResourceView(mScreenTexture.Get(), &srvDesc, cpuHandle);
+		device->CreateShaderResourceView(screenTexture.Get(), &srvDesc, cpuHandle);
 
-		drawScreen->mDescriptorHeap = mShaderResourceHeap;
-		drawScreen->mSRVTableHandle = gpuHandle;
+		drawScreen->descriptorHeap = shaderResourceHeap;
+		drawScreen->srvTableHandle = gpuHandle;
 
-		pathTraceTask->mOutputTexture = mScreenTexture;
-		pathTraceTask->mDescriptorHeap = mShaderResourceHeap;
-		pathTraceTask->mDispatchWidth = (mWindowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
-		pathTraceTask->mDispatchHeight = (mWindowProperties.mHeight + 7) / 8;
+		pathTraceTask->mOutputTexture = screenTexture;
+		pathTraceTask->descriptorHeap = shaderResourceHeap;
+		pathTraceTask->dispatchInfo.width = (windowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
+		pathTraceTask->dispatchInfo.height = (windowProperties.mHeight + 7) / 8;
 
 		frameNumber = &pathTraceTask->mCameraConstants.frameNumber;
 
-		mTasks.push_back(std::move(pathTraceTask));
+		tasks.push_back(std::move(pathTraceTask));
 	}
 
 	// Sync
 	{
-		waitForPreviousFrame();
+		WaitForPreviousFrame();
 	}
 
-	mTasks.push_back(std::move(drawScreen));
+	tasks.push_back(std::move(drawScreen));
 }
 
 void MinimalDXApp::addTask(std::unique_ptr<Task> task)
 {
-	mTasks.push_back(std::move(task));
+	tasks.push_back(std::move(task));
 }
 
-void MinimalDXApp::render()
+void MinimalDXApp::Render()
 {
     // Get the current back buffer handle
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = mRTVDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    rtvHandle.ptr += mFrameIndex * mRTVDescriptorSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+    rtvHandle.ptr += frameIndex * rtvDescriptorSize;
 
 	// Reset command allocator & list
-	mCommandAllocator->Reset();
-	mCommandList->Reset(mCommandAllocator.Get(), nullptr);
+	commandAllocator->Reset();
+	commandList->Reset(commandAllocator.Get(), nullptr);
 
     // Set viewport and scissor rect
-    D3D12_VIEWPORT viewport = {0.0f, 0.0f, static_cast<float>(mWindowProperties.mWidth), static_cast<float>(mWindowProperties.mHeight), 0.0f, 1.0f};
-    D3D12_RECT scissorRect = {0, 0, mWindowProperties.mWidth, mWindowProperties.mHeight};
-	mCommandList->RSSetViewports(1, &viewport);
-    mCommandList->RSSetScissorRects(1, &scissorRect);
+    D3D12_VIEWPORT viewport = {0.0f, 0.0f, static_cast<float>(windowProperties.mWidth), static_cast<float>(windowProperties.mHeight), 0.0f, 1.0f};
+    D3D12_RECT scissorRect = {0, 0, windowProperties.mWidth, windowProperties.mHeight};
+	commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissorRect);
 
 	// Transition the back buffer to render target
     D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		mRenderTargets[mFrameIndex].Get(),
+		renderTargets[frameIndex].Get(),
 		D3D12_RESOURCE_STATE_PRESENT,
 		D3D12_RESOURCE_STATE_RENDER_TARGET
 	);
-    mCommandList->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
     // Clear the render target
     FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-    mCommandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
 	// Update frameNumber cbuffer value
 	*frameNumber += 1;
 
-	for (auto& task : mTasks)
+	for (auto& task : tasks)
 	{	
-		task->execute(mCommandList, mCommandAllocator, &rtvHandle);
+		task->execute(commandList, commandAllocator, &rtvHandle);
 	}
 	
     // Transition back buffer to present
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        mRenderTargets[mFrameIndex].Get(),
+        renderTargets[frameIndex].Get(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PRESENT
     );
 
-    mCommandList->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
     // Close and execute
-    mCommandList->Close();
+    commandList->Close();
 
 	// ACTUAL rendering part
-    ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
-    mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+    ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
+    commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
     // Present
-    mSwapChain->Present(1, 0);
+    swapChain->Present(1, 0);
 
     // Wait for GPU to finish
-    waitForPreviousFrame();
+    WaitForPreviousFrame();
 }
 
-void MinimalDXApp::run()
+void MinimalDXApp::Run()
 {
 	// When render is done, we call it like a helper function.
 	MSG msg = {};
@@ -463,22 +419,22 @@ void MinimalDXApp::run()
 		}
 		else
 		{
-			render();
+			Render();
 		}
 	}
 }
 
-void MinimalDXApp::waitForPreviousFrame()
+void MinimalDXApp::WaitForPreviousFrame()
 {
-	const UINT64 fence = mFenceValue;
-	mCommandQueue->Signal(mFence.Get(), fence);
-	mFenceValue++;
+	const UINT64 fenceCheck = fenceValue;
+	commandQueue->Signal(fence.Get(), fenceCheck);
+	fenceValue++;
 
-	if ( mFence->GetCompletedValue() < fence)
+	if ( fence->GetCompletedValue() < fenceCheck)
 	{
-		mFence->SetEventOnCompletion(fence, mFenceEvent);
-		WaitForSingleObject(mFenceEvent, INFINITE);
+		fence->SetEventOnCompletion(fenceCheck, fenceEvent);
+		WaitForSingleObject(fenceEvent, INFINITE);
 	}
 
-	mFrameIndex = mSwapChain->GetCurrentBackBufferIndex();
+	frameIndex = swapChain->GetCurrentBackBufferIndex();
 }

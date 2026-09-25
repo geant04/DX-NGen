@@ -5,18 +5,18 @@
 namespace Pipeline {
 	
 void createPSO(
-	ComPtr<ID3D12Device> &mDevice, 
-	ComPtr<ID3D12RootSignature> &mRootSignature, 
+	const ComPtr<ID3D12Device> &device, 
+	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
-	const wchar_t* vsAssetName,
-	const wchar_t* psAssetName
+	const char* vsAssetName,
+	const char* psAssetName
 );
 
 void createComputePSO(
-	ComPtr<ID3D12Device> &mDevice, 
-	ComPtr<ID3D12RootSignature> &mRootSignature, 
+	ComPtr<ID3D12Device> &device, 
+	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
-	const wchar_t* csAssetName,
+	const char* csAssetName,
 	const char* entryPoint
 );
 

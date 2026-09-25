@@ -3,15 +3,16 @@
 namespace Pipeline {
 
 void createPSO(
-	ComPtr<ID3D12Device> &mDevice, 
-	ComPtr<ID3D12RootSignature> &mRootSignature, 
+	const ComPtr<ID3D12Device> &device, 
+	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
-	const wchar_t* vsAssetName,
-	const wchar_t* psAssetName
+	const char* vsAssetName,
+	const char* psAssetName
 )
 {
 	ComPtr<ID3DBlob> vertexShader;
 	ComPtr<ID3DBlob> pixelShader;
+	ComPtr<ID3DBlob> errorMessage;
 
 	// For debugging, you might wantt o have the following flags:
 	// D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
@@ -21,8 +22,29 @@ void createPSO(
 	auto vsPath = GetAssetFullPath(vsAssetName);
 	auto psPath = GetAssetFullPath(psAssetName);
 
-	D3DCompileFromFile(vsPath.c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr);
-	D3DCompileFromFile(psPath.c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr);
+	HRESULT hr = D3DCompileFromFile(vsPath.c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr);
+	if (FAILED(hr))
+	{
+		if (errorMessage)
+		{
+			OutputDebugStringA(
+				static_cast<const char*>(errorMessage->GetBufferPointer())
+			);
+		}
+		return;
+	}
+
+	hr = D3DCompileFromFile(psPath.c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr);
+	if (FAILED(hr))
+	{
+		if (errorMessage)
+		{
+			OutputDebugStringA(
+				static_cast<const char*>(errorMessage->GetBufferPointer())
+			);
+		}
+		return;
+	}
 
 	D3D12_SHADER_BYTECODE vsByteCode = {};
 	vsByteCode.pShaderBytecode = vertexShader->GetBufferPointer();
@@ -45,7 +67,7 @@ void createPSO(
 	// The root signature gets WAYYY more complicated when we start adding more shit to it.
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-	psoDesc.pRootSignature = mRootSignature.Get();
+	psoDesc.pRootSignature = rootSignature.Get();
 	psoDesc.VS = vsByteCode;
 	psoDesc.PS = psByteCode;
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
@@ -58,7 +80,7 @@ void createPSO(
 	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	psoDesc.SampleDesc.Count = 1;
 
-	mDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
+	device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
 
 	if (outPSO == NULL) {
 		// Problem detected, need to log this!
@@ -67,10 +89,10 @@ void createPSO(
 }
 
 void createComputePSO(
-	ComPtr<ID3D12Device> &mDevice, 
-	ComPtr<ID3D12RootSignature> &mRootSignature, 
+	ComPtr<ID3D12Device> &device, 
+	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
-	const wchar_t* csAssetName,
+	const char* csAssetName,
 	const char* entryPoint
 )
 {
@@ -108,10 +130,10 @@ void createComputePSO(
 	csByteCode.BytecodeLength = csShader->GetBufferSize();
 
 	D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
-	psoDesc.pRootSignature = mRootSignature.Get();
+	psoDesc.pRootSignature = rootSignature.Get();
 	psoDesc.CS = csByteCode;
 
-	mDevice->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
+	device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
 
 	if (outPSO == NULL) {
 		// Problem detected, need to log this!

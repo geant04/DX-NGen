@@ -8,14 +8,14 @@ namespace RootSignature
 // binding textures and what not. Eh, that's fine - we'll just get there when we get there, you know
 // You'd link one root signature per pipeline essentially, this root signature defines what's linked to the shader
 void createRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
+	ComPtr<ID3D12Device> &device,
 	ComPtr<ID3D12RootSignature> &outRootSignature
 )
 {
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
 	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
-	if (FAILED(mDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
 	{
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 	}
@@ -59,20 +59,20 @@ void createRootSignature(
 	// Converts root signature to a binary blob that the GPU can read
 	// Not sure what a versioned root signature is though
 	D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
-	mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
+	device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
 }
 
 // Different root signature for the compute pipeline
 // TODO: There is a lot of duplicated code between this root-signature generation and the prior one.
 void createPathTracingRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
+	ComPtr<ID3D12Device> &device,
 	ComPtr<ID3D12RootSignature> &outRootSignature
 )
 {
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
 	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
-	if (FAILED(mDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
 	{
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 	}
@@ -100,7 +100,7 @@ void createPathTracingRootSignature(
 		return std::perror("[ERROR CS]: Cannot serialize versioned root signature");
 	}
 
-	hr = mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
+	hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
 	if (FAILED(hr)) {
 		return std::perror("[ERROR CS]: Cannot create PT root signature");
 	}
@@ -108,7 +108,7 @@ void createPathTracingRootSignature(
 
 // Blit results from UAV to the screen
 void createBlitRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
+	const ComPtr<ID3D12Device> &device,
 	ComPtr<ID3D12RootSignature> &outRootSignature
 )
 {
@@ -116,7 +116,7 @@ void createBlitRootSignature(
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
 	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
-	if (FAILED(mDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
 	{
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 	}
@@ -160,10 +160,80 @@ void createBlitRootSignature(
 		return std::perror("[ERROR CS]: Cannot serialize versioned root signature");
 	}
 
-	hr = mDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
+	hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&outRootSignature));
 	if (FAILED(hr)) {
 		return std::perror("[ERROR CS]: Cannot create PT root signature");
 	}
+}
+
+enum ParameterType 
+{
+	DESCRIPTOR_TABLE,
+	CONSTANTS,
+	DESCRIPTOR
+};
+
+struct DescriptorRangeInfo
+{
+	D3D12_DESCRIPTOR_RANGE_TYPE type;
+	UINT numDescriptors;
+	UINT baseShaderRegister;
+};
+
+struct Parameter
+{
+	ParameterType type;
+	std::vector<DescriptorRangeInfo> ranges;
+};
+
+// Our root signature builder should build descriptor tables, where each descriptor table has info about its respective stuff.
+// so maybe a structure like this:
+// table0: {
+//  { SRV, other info, etc. } <- all of this information can be updated! 
+//                               i wonder if this structure as a DS can be passed around 
+//                               so we can do quick updates, like table0[0].setDescriptor or something, right?
+//  { CBV, other info, etc. }
+//  { UAV, other info, etc. }
+// } 
+// table1: { // -- issue: this parameter doesn't *have* to be a table.
+//  { Sampler, etc. }
+// }
+// table2: {
+//  { SRV, hypothetical table setup here right?}
+// }
+
+struct RootSignatureDesc
+{
+	std::vector<Parameter> parameters;
+};
+
+void BuildRootSignature(
+	ComPtr<ID3D12Device> &device, 
+	ComPtr<ID3D12RootSignature> &outRootSignature, 
+	const RootSignatureDesc& rootSignatureDesc
+)
+{
+	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	{
+		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+	}
+
+	// int numDescriptorRanges;
+	std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
+	std::vector<CD3DX12_ROOT_PARAMETER1> parameters;
+
+	for (const Parameter& param : rootSignatureDesc.parameters)
+	{
+		if (param.type == ParameterType::DESCRIPTOR_TABLE)
+		{
+			// Uninitialized data, for now?
+			parameters.push_back({});
+		}
+	}
+
 }
 
 }

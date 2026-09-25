@@ -16,7 +16,7 @@ void createPathTracingRootSignature(
 );
 
 void createBlitRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
+	const ComPtr<ID3D12Device> &mDevice,
 	ComPtr<ID3D12RootSignature> &outRootSignature
 );
 

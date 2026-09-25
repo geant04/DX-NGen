@@ -2,15 +2,18 @@
 
 #include "WinInclude.h"
 #include "MinimalDXApp.h"
+#include "Settings.h"
 
 int main()
 {
-	HINSTANCE hInstance = GetModuleHandle(nullptr);
+	HINSTANCE hInstance = GetModuleHandle( nullptr );
 	int nCmdShow = SW_SHOW;
 
 	MinimalDXApp app;
-	app.createWindow(hInstance, nCmdShow);
-	app.initializeDX();
-	app.loadAssets();
-	app.run();
+	GlobalSettings globalSettings = {};
+
+	app.CreateDisplayWindow( hInstance, nCmdShow );
+	app.InitializeDX( globalSettings );
+	app.BuildTaskList();
+	app.Run();
 }

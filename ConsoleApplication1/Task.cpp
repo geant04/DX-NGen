@@ -7,14 +7,14 @@ void DrawTask::execute(
 )
 {
 	// Bind the root signature and PSO before binding any descriptor tables against them
-	commandList->SetGraphicsRootSignature(mRootSignature.Get());
-	commandList->SetPipelineState(mPipelineState.Get());
+	commandList->SetGraphicsRootSignature(rootSignature.Get());
+	commandList->SetPipelineState(pipelineState.Get());
 
-    if (mDescriptorHeap)
+    if (descriptorHeap)
     {
-        ID3D12DescriptorHeap* heaps[] = { mDescriptorHeap.Get() };
+        ID3D12DescriptorHeap* heaps[] = { descriptorHeap.Get() };
         commandList->SetDescriptorHeaps(_countof(heaps), heaps);
-        commandList->SetGraphicsRootDescriptorTable(0, mSRVTableHandle);
+        commandList->SetGraphicsRootDescriptorTable(0, srvTableHandle);
     }
 
     // Bind RTV
@@ -22,7 +22,7 @@ void DrawTask::execute(
 
     // Bind vertex buffer and draw
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->IASetVertexBuffers(0, 1, &mVertexBufferView);
+    commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
     commandList->DrawInstanced(3, 1, 0, 0);
 }
 
@@ -36,10 +36,10 @@ void ComputeTask::execute(
     memcpy(mCameraConstantBufferData, &mCameraConstants, sizeof(mCameraConstants));
 
     // PSO and root signature setup
-    ID3D12DescriptorHeap* heaps[] = { mDescriptorHeap.Get() };
+    ID3D12DescriptorHeap* heaps[] = { descriptorHeap.Get() };
     commandList->SetDescriptorHeaps(_countof(heaps), heaps);
-    commandList->SetComputeRootSignature(mRootSignature.Get());
-    commandList->SetPipelineState(mPipelineState.Get());
+    commandList->SetComputeRootSignature(rootSignature.Get());
+    commandList->SetPipelineState(pipelineState.Get());
     commandList->SetComputeRootDescriptorTable(0, mOutputUAVHandle);
     commandList->SetComputeRootConstantBufferView(1, mCameraConstantBuffer->GetGPUVirtualAddress());
 
@@ -51,7 +51,7 @@ void ComputeTask::execute(
 	);
     commandList->ResourceBarrier(1, &barrier);
 
-    commandList->Dispatch(mDispatchWidth, mDispatchHeight, 1);
+    commandList->Dispatch(dispatchInfo.width, dispatchInfo.height, 1);
 
     // Barrier transition back from UA to PS
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(

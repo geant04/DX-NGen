@@ -2,6 +2,8 @@
 
 #include "Common.h"
 #include "Task.h"
+#include "Settings.h"
+#include "ResourceManager.h"
 
 struct WindowProperties
 {
@@ -11,7 +13,7 @@ struct WindowProperties
 	float aspectRatio;
 };
 
-class MinimalDXApp
+struct MinimalDXApp
 {
 	// Baseline boiler plate information storing everything needed for a simple DX12 app.
 	// This includes the following:
@@ -22,48 +24,49 @@ class MinimalDXApp
 	//  - Descriptor Heaps + RTVs, this stores a table on the GPU to access Render Target Views/Views, allowing us to see GPU memory
 	//  - PSO... stores vertex/pixel shader information, providing proper layouts for the respective shaders
 	//  - Fences/Synchronization to ensure we can execute commands on the GPU and run CPU code subsequently
-public:
-	void initializeDX();
-	void loadAssets();
-	void waitForPreviousFrame();
-	void createWindow(HINSTANCE hInstnace, int nCmdShow);
+	void InitializeDX( const GlobalSettings& settings );
+	void BuildTaskList();
+	void WaitForPreviousFrame();
+	void CreateDisplayWindow(HINSTANCE hInstnace, int nCmdShow);
 
-	void render();
-	void run();
+	void Render();
+	void Run();
 	void addTask(std::unique_ptr<Task> task);
 
 	// Something sus, but we roll with it for now.
 	// Do something more advanced later, like multiple buffering?
-	static const uint32_t mFrameCount = 2;
-	WindowProperties mWindowProperties = {};
+	static const uint32_t frameCount = 2;
+	WindowProperties windowProperties = {};
 
-private:
-	ComPtr<IDXGIFactory7> mFactory;
-	ComPtr<IDXGIAdapter1> mAdapter;
-	ComPtr<ID3D12Device> mDevice;
-	
+	// Backend context should be abstracted away in a separate level
+	ComPtr<IDXGIFactory7> factory;
+	ComPtr<IDXGIAdapter1> adapter;
+	ComPtr<ID3D12Device> device;
+
 	// Buffer writing stuff
-	ComPtr<ID3D12GraphicsCommandList> mCommandList;
-	ComPtr<ID3D12CommandQueue> mCommandQueue;
-	ComPtr<ID3D12CommandAllocator> mCommandAllocator;
-	ComPtr<IDXGISwapChain4> mSwapChain;
+	ComPtr<ID3D12GraphicsCommandList> commandList;
+	ComPtr<ID3D12CommandQueue> commandQueue;
+	ComPtr<ID3D12CommandAllocator> commandAllocator;
+	ComPtr<IDXGISwapChain4> swapChain;
 
 	// Resources
-	ComPtr<ID3D12DescriptorHeap> mRTVDescriptorHeap;
-	ComPtr<ID3D12DescriptorHeap> mShaderResourceHeap;
-	ComPtr<ID3D12Resource> mRenderTargets[mFrameCount];
-	ComPtr<ID3D12Resource> mScreenTexture;
+	ComPtr<ID3D12DescriptorHeap> rtvDescriptorHeap;
+	ComPtr<ID3D12DescriptorHeap> shaderResourceHeap;
+	ComPtr<ID3D12Resource> renderTargets[frameCount];
+	ComPtr<ID3D12Resource> screenTexture;
 
-	ComPtr<ID3D12Fence> mFence;
-	HANDLE mFenceEvent;
-	UINT64 mFenceValue = 0;
+	ResourceManager::GlobalDescriptorHeaps globalDescriptorHeaps;
+
+	ComPtr<ID3D12Fence> fence;
+	HANDLE fenceEvent;
+	UINT64 fenceValue = 0;
 
 	// Miscellanious things
-	std::vector<std::unique_ptr<Task>> mTasks;
+	std::vector<std::unique_ptr<Task>> tasks;
 
-	uint32_t mFrameIndex;
-	uint32_t mRTVDescriptorSize;
-	uint32_t mShaderResourceDescriptorSize;
+	uint32_t frameIndex;
+	uint32_t rtvDescriptorSize;
+	uint32_t shaderResourceDescriptorSize;
 	uint32_t* frameNumber;
 };
 
