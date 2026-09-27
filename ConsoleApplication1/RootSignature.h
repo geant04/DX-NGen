@@ -1,8 +1,9 @@
 #pragma once
 
 #include "Common.h"
+#include "Task.h"
 
-namespace RootSignature
+namespace Gfx
 {
 	
 void createRootSignature(
@@ -19,6 +20,8 @@ void createBlitRootSignature(
 	const ComPtr<ID3D12Device> &mDevice,
 	ComPtr<ID3D12RootSignature> &outRootSignature
 );
+
+void BuildComputeRootSignature( ComPtr<ID3D12Device> device, ComputeTask* task );
 
 };
 

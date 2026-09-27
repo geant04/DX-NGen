@@ -131,57 +131,9 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 
 	frameIndex = swapChain->GetCurrentBackBufferIndex();
 
-	ResourceManager::CreateGlobalDescriptorHeaps( device, globalDescriptorHeaps );
-
-	// todo: replace all of this descriptor junk with the global data
-	// Create RTV Descriptor Heap + Texture Heap for our awesome texture
 	{
-		// I'm afraid this gets a bit complicated when we want to do stuff like
-		// add textures, requiring SRVs and UAVs
-		// SRV - Shader Resource View
-		// UAV - Unordered Resource View
-		// RTV - Render Target View
-		D3D12_DESCRIPTOR_HEAP_DESC RTVDescriptorHeapDesc = {};
-		RTVDescriptorHeapDesc.NumDescriptors = frameCount;
-		RTVDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		RTVDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		device->CreateDescriptorHeap(&RTVDescriptorHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap));
-		
-		rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-		// So yes, I was correct that this part gets complicated when we add SRV heaps. My question, though, is that if we 
-		// want to bind multiple textures, does it just require one heap, or many?
-		D3D12_DESCRIPTOR_HEAP_DESC shaderResourceHeapDesc = {};
-
-		// In theory, if I wanted multiple textures, then I'd adjust the number of descriptors.
-		// This is overly simplistic, though! It does not scale at all.
-		// To scale well, we'd instead need a bigger descriptor heap with, say, like 10000 descriptors.
-		// I think this is pretty similar to the bind group in terms of defining visibility as well.
-
-		// Descriptor is a metadata record. Stored in the descriptor heap
-		// This should be called the textureHeap or something in the future, should I add more textures to it
-		// Updating SRVHeapDesc to contain 3 now for our simple PathTracing app.
-		// Slot 0: UAV, screenTexture
-		// Slot 1: SRV, for the scene geo and camera info
-		// Slot 2: SRV, view for the screenTexture
-		shaderResourceHeapDesc.NumDescriptors = 3;
-		shaderResourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		shaderResourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		device->CreateDescriptorHeap(&shaderResourceHeapDesc, IID_PPV_ARGS(&shaderResourceHeap));
-		shaderResourceDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	}
-
-	// Create frame resources in the swap chain, can we think of this as populating frame data per backbuffer in the swapchain?
-	{
-		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-
-		for (uint32_t i = 0; i < frameCount; i++)
-		{
-			swapChain->GetBuffer(i, IID_PPV_ARGS(&renderTargets[i]));
-			device->CreateRenderTargetView(renderTargets[i].Get(), nullptr, rtvHandle);
-			rtvHandle.ptr += rtvDescriptorSize;
-		}
+		Gfx::CreateGlobalDescriptorHeaps( device, resources.globalDescriptorHeap );
+		Gfx::CreateSwapChainRTVs( device, swapChain, &resources, SWAPCHAIN_COUNT );
 	}
 
 	// Might need a reminder of commandAllocator's purpose?
@@ -203,134 +155,42 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 // Responsible for PSO creation and compiling vert/pixel shaders
 void MinimalDXApp::BuildTaskList()
 {
+	const uint32_t screenTextureMips = 1;
+	const uint32_t screenTextureSamples = 1;
+	const uint32_t screenWidth = windowProperties.mWidth;
+	const uint32_t screenHeight = windowProperties.mHeight;
+
 	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
 	{
 		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
 		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
 		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
 	}
-	Gfx::CreateDrawTask( this, drawScreen.get() );
 	
-	// ? why is this here and not at the top of BuildTaskList?
-	commandList->Close();
-
+	std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
 	{
-		// TODO:
-		// My goal is to do some fun compute shader dispatch work that modifies our "screen", having a thread modify a UAV.
-		// This is our ad-hoc path-tracer, which simulates path-tracing on a per-thread level.
-		// We will then do some copy-to-RTV operation, such that we draw to the swap-chain using the results
-		// from our compute pass.
-		// Overall, this requires:
-		// 1. Path-tracing target UAV
-		// 2. Transition from UAV to SRV after the compute work is done (requires a barrier)
-		// 3. Root signature using our SRV, and final draw to RT using our transitioned SRV.
+		pathTraceTask->readWriteTextures.push_back( &screenTexture );
+		pathTraceTask->dynamicBuffers.push_back( &cameraDataBuffer );
 
-		std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
+		Gfx::CreateRWTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+		Gfx::CreateReadTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+		Gfx::CreateConstantBuffer( device, &cameraDataBuffer, &resources, &cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 
-		RootSignature::createPathTracingRootSignature(
-			device,
-			pathTraceTask->rootSignature
-		);
+		pathTraceTask->initResources.csAssetName = "csPathTracer.hlsl";
+		pathTraceTask->initResources.entryPoint = "CSMain";
+		pathTraceTask->initResources.dispatchWidth = (windowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
+		pathTraceTask->initResources.dispatchHeight = (windowProperties.mHeight + 7) / 8;
 
-		Pipeline::createComputePSO(
-			device,
-			pathTraceTask->rootSignature,
-			pathTraceTask->pipelineState,
-			"csPathTracer.hlsl",
-			"CSMain"
-		);
-		
-		D3D12_RESOURCE_DESC textureDesc = {};
-		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		textureDesc.MipLevels = 1;
-		textureDesc.Width = windowProperties.mWidth;
-		textureDesc.Height = windowProperties.mHeight;
-		textureDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-		textureDesc.DepthOrArraySize = 1;
-		textureDesc.SampleDesc.Count = 1;
-		textureDesc.SampleDesc.Quality = 0;
-		textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		if ( !Gfx::CreateComputeTask( this, pathTraceTask.get() ) )
+		{
+			return;
+		}
+	}
 
-		// Resource state initial at PS_Resource, s.t we go PS -> UA -> PS per frame
-		CD3DX12_HEAP_PROPERTIES defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-		device->CreateCommittedResource(
-			&defaultHeapProperties,
-			D3D12_HEAP_FLAG_NONE,
-			&textureDesc,
-			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-			nullptr,
-			IID_PPV_ARGS(&screenTexture)
-		);
-
-		screenTexture->SetName(L"Screen Texture");
-
-		CameraConstants cameraConstants = {};
-		pathTraceTask->mCameraConstants = cameraConstants;
-
-		// Camera constant buffer: upload heap, persistently mapped so we can memcpy fresh data each frame
-		const UINT cameraCBSize = (sizeof(CameraConstants) + 255) & ~255;
-		CD3DX12_HEAP_PROPERTIES uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-		CD3DX12_RESOURCE_DESC cameraCBDesc = CD3DX12_RESOURCE_DESC::Buffer(cameraCBSize);
-		device->CreateCommittedResource(
-			&uploadHeapProperties,
-			D3D12_HEAP_FLAG_NONE,
-			&cameraCBDesc,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
-			IID_PPV_ARGS(&pathTraceTask->mCameraConstantBuffer)
-		);
-
-		pathTraceTask->mCameraConstantBuffer->SetName(L"Camera Constant Buffer");
-
-		D3D12_RANGE cameraCBReadRange = { 0, 0 };
-		pathTraceTask->mCameraConstantBuffer->Map(0, &cameraCBReadRange, reinterpret_cast<void**>(&pathTraceTask->mCameraConstantBufferData));
-		memcpy(pathTraceTask->mCameraConstantBufferData, &pathTraceTask->mCameraConstants, sizeof(CameraConstants));
-
-		// Walk the shader-visible heap, building a view at each reserved slot:
-		// Slot 0: UAV of screenTexture (compute output, u0)
-		// Slot 1: reserved for scene-geo / future texture SRV (t0 in the path tracing root signature)
-		// Slot 2: SRV of screenTexture (sampled by drawScreen's pixel shader, t0)
-		D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = shaderResourceHeap->GetCPUDescriptorHandleForHeapStart();
-		D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = shaderResourceHeap->GetGPUDescriptorHandleForHeapStart();
-
-		// Populate slot 0
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		device->CreateUnorderedAccessView(screenTexture.Get(), nullptr, &uavDesc, cpuHandle);
-		pathTraceTask->mOutputUAVHandle = gpuHandle;
-
-		cpuHandle.ptr += shaderResourceDescriptorSize;
-		gpuHandle.ptr += shaderResourceDescriptorSize;
-		// Slot 1 stays unpopulated until there's actual scene/texture data to view
-
-		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-		cbvDesc.BufferLocation = pathTraceTask->mCameraConstantBuffer->GetGPUVirtualAddress();
-		cbvDesc.SizeInBytes = cameraCBSize;
-		device->CreateConstantBufferView(&cbvDesc, cpuHandle);
-
-		cpuHandle.ptr += shaderResourceDescriptorSize;
-		gpuHandle.ptr += shaderResourceDescriptorSize;
-		// Populate slot 2
-
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = 1;
-		device->CreateShaderResourceView(screenTexture.Get(), &srvDesc, cpuHandle);
-
-		drawScreen->descriptorHeap = shaderResourceHeap;
-		drawScreen->srvTableHandle = gpuHandle;
-
-		pathTraceTask->mOutputTexture = screenTexture;
-		pathTraceTask->descriptorHeap = shaderResourceHeap;
-		pathTraceTask->dispatchInfo.width = (windowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
-		pathTraceTask->dispatchInfo.height = (windowProperties.mHeight + 7) / 8;
-
-		frameNumber = &pathTraceTask->mCameraConstants.frameNumber;
-
-		tasks.push_back(std::move(pathTraceTask));
+	drawScreen->srvTableHandle = resources.GetGpuHandle( screenTexture.srv, Gfx::SHADER_RESOURCE_HEAP );
+	if ( !Gfx::CreateDrawTask( this, drawScreen.get() ) )
+	{
+		return;
 	}
 
 	// Sync
@@ -338,6 +198,23 @@ void MinimalDXApp::BuildTaskList()
 		WaitForPreviousFrame();
 	}
 
+	std::unique_ptr<BarrierTask> screenSrvToUav = std::make_unique<BarrierTask>();
+	{
+		screenSrvToUav->resource = screenTexture.resource.Get();
+		screenSrvToUav->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		screenSrvToUav->stateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	}
+
+	std::unique_ptr<BarrierTask> screenUavToSrv = std::make_unique<BarrierTask>();
+	{	
+		screenUavToSrv->resource = screenTexture.resource.Get();
+		screenUavToSrv->stateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		screenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	}
+
+	tasks.push_back(std::move(screenSrvToUav));
+	tasks.push_back(std::move(pathTraceTask));
+	tasks.push_back(std::move(screenUavToSrv));
 	tasks.push_back(std::move(drawScreen));
 }
 
@@ -346,15 +223,33 @@ void MinimalDXApp::addTask(std::unique_ptr<Task> task)
 	tasks.push_back(std::move(task));
 }
 
+void MinimalDXApp::ProcessGameState()
+{
+	// func responsible for stuff like getting mouse I/O or toggling settings and what not.
+	// basically processing changes and stuff from the client
+
+	{
+		cameraConstants.frameNumber++;
+	}
+}
+
 void MinimalDXApp::Render()
 {
     // Get the current back buffer handle
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    rtvHandle.ptr += frameIndex * rtvDescriptorSize;
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = resources.GetCpuHandle( resources.swapChainTextures[frameIndex].rtv, Gfx::RTV_HEAP );
 
 	// Reset command allocator & list
 	commandAllocator->Reset();
 	commandList->Reset(commandAllocator.Get(), nullptr);
+
+	// Bind, global descriptor heap setup
+	ID3D12DescriptorHeap* descriptorHeaps[] =
+	{
+		resources.globalDescriptorHeap.shaderResourceGlobalHeap.descriptorHeapPtr.Get(),
+		resources.globalDescriptorHeap.samplerGlobalHeap.descriptorHeapPtr.Get()
+	};
+
+	commandList->SetDescriptorHeaps( _countof(descriptorHeaps), descriptorHeaps );
 
     // Set viewport and scissor rect
     D3D12_VIEWPORT viewport = {0.0f, 0.0f, static_cast<float>(windowProperties.mWidth), static_cast<float>(windowProperties.mHeight), 0.0f, 1.0f};
@@ -364,7 +259,7 @@ void MinimalDXApp::Render()
 
 	// Transition the back buffer to render target
     D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		renderTargets[frameIndex].Get(),
+		resources.swapChainTextures[frameIndex].resource.Get(),
 		D3D12_RESOURCE_STATE_PRESENT,
 		D3D12_RESOURCE_STATE_RENDER_TARGET
 	);
@@ -374,9 +269,6 @@ void MinimalDXApp::Render()
     FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
     commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
-	// Update frameNumber cbuffer value
-	*frameNumber += 1;
-
 	for (auto& task : tasks)
 	{	
 		task->execute(commandList, commandAllocator, &rtvHandle);
@@ -384,7 +276,7 @@ void MinimalDXApp::Render()
 	
     // Transition back buffer to present
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        renderTargets[frameIndex].Get(),
+        resources.swapChainTextures[frameIndex].resource.Get(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PRESENT
     );
@@ -419,6 +311,7 @@ void MinimalDXApp::Run()
 		}
 		else
 		{
+			ProcessGameState();
 			Render();
 		}
 	}

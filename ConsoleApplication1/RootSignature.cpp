@@ -1,6 +1,6 @@
 #include "RootSignature.h"
 
-namespace RootSignature 
+namespace Gfx 
 {
 
 // Root signatures address what resources the shader can see on the GPU
@@ -234,6 +234,73 @@ void BuildRootSignature(
 		}
 	}
 
+}
+
+void BuildComputeRootSignature( ComPtr<ID3D12Device> device, ComputeTask* task )
+{
+	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+
+	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+	{
+		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+	}
+
+	std::vector<CD3DX12_DESCRIPTOR_RANGE1> descriptorRanges = {};
+	std::vector<CD3DX12_ROOT_PARAMETER1> rootParameters = {};
+
+	descriptorRanges.reserve(4);
+	rootParameters.reserve(4);
+
+	int descriptorRangeCount = 0;
+	int descriptorRootParamsCount = 0;
+	int readTexturesCount = task->readTextures.size();
+	int readWriteTexturesCount = task->readWriteTextures.size();
+	int dynamicBuffersCount = task->dynamicBuffers.size();
+
+	if ( readTexturesCount > 0 )
+	{
+		// t0
+		descriptorRanges.push_back({});
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readTexturesCount, 0, 0);
+
+		rootParameters.push_back({});
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+	if ( readWriteTexturesCount > 0 )
+	{
+		// u0
+		descriptorRanges.push_back({});
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, readWriteTexturesCount, 0, 0);
+		
+		rootParameters.push_back({});
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+	// add support for normal buffers
+	if ( dynamicBuffersCount > 0 )
+	{
+		descriptorRanges.push_back({});
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, dynamicBuffersCount, 0, 0);
+		
+		rootParameters.push_back({});
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+
+	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+	rootSignatureDesc.Init_1_1(descriptorRootParamsCount, &rootParameters[0]);
+	
+	ComPtr<ID3DBlob> signature;
+	ComPtr<ID3DBlob> error;
+	HRESULT hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
+
+	if (FAILED(hr)) {
+		return std::perror("[ERROR CS]: Cannot serialize versioned root signature");
+	}
+
+	hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&task->rootSignature));
+	if (FAILED(hr)) {
+		return std::perror("[ERROR CS]: Cannot create PT root signature");
+	}
 }
 
 }

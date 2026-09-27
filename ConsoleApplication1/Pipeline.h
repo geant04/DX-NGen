@@ -2,7 +2,7 @@
 
 #include "Common.h"
 
-namespace Pipeline {
+namespace Gfx {
 	
 void createPSO(
 	const ComPtr<ID3D12Device> &device, 

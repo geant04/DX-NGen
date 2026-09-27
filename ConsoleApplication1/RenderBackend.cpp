@@ -50,6 +50,17 @@ namespace Gfx
 		drawTask->vertexBufferView.StrideInBytes = sizeof(Vertex);
 		drawTask->vertexBufferView.SizeInBytes = mesh->vertexBufferSize;
 
+		// We need to make the command list that'll execute based off of the PSO we made
+		app->device->CreateCommandList(
+			0, 
+			D3D12_COMMAND_LIST_TYPE_DIRECT, 
+			app->commandAllocator.Get(), 
+			drawTask->pipelineState.Get(), 
+			IID_PPV_ARGS(&app->commandList)
+		);
+		
+		app->commandList->Close();
+
 		// Execute the buffer upload
 		app->commandAllocator->Reset();
 		app->commandList->Reset(app->commandAllocator.Get(), drawTask->pipelineState.Get());
@@ -76,6 +87,71 @@ namespace Gfx
 		app->commandQueue->ExecuteCommandLists(_countof(ppCommandList), ppCommandList);
 	}
 
+	static bool PrepareDescriptorTable( 
+		ComPtr<ID3D12Device> device,
+		Resources* resources,
+		const std::vector<DescriptorIndex>& sourceDescriptors,
+		PreparedDescriptorTable* outTable
+	)
+	{
+		if ( device == nullptr || resources == nullptr || outTable == nullptr )
+		{
+			return false;
+		}
+
+		*outTable = {};
+
+		if ( sourceDescriptors.empty() )
+		{
+			return true;
+		}
+
+		Gfx::DescriptorHeap* heap = &resources->globalDescriptorHeap.shaderResourceGlobalHeap;
+
+		if ( heap->descriptorHeapPtr == nullptr )
+		{
+			return false;
+		}
+
+		const uint32_t descriptorCount = static_cast<uint32_t>( sourceDescriptors.size() );
+
+		if ( heap->handleIndex + descriptorCount > heap->capacity )
+		{
+			return false;
+		}
+
+		const uint32_t destinationIndex = heap->handleIndex;
+
+		DescriptorIndex destinationDescriptor;
+		destinationDescriptor.index = destinationIndex;
+
+		D3D12_CPU_DESCRIPTOR_HANDLE destinationStart = resources->GetCpuHandle( destinationDescriptor, Gfx::SHADER_RESOURCE_HEAP );
+
+		for ( uint32_t i = 0; i < descriptorCount; i++ )
+		{
+			if ( !sourceDescriptors[i].IsValid() )
+			{
+				return false;
+			}
+		}
+
+		heap->handleIndex += descriptorCount;
+		
+		for ( uint32_t i = 0; i < descriptorCount; i++ )
+		{
+			D3D12_CPU_DESCRIPTOR_HANDLE sourceHandle = resources->GetCpuHandle( sourceDescriptors[i], Gfx::SHADER_RESOURCE_HEAP );
+			D3D12_CPU_DESCRIPTOR_HANDLE destinationHandle = destinationStart;
+			destinationHandle.ptr += static_cast<SIZE_T>(i) * heap->descriptorSize;
+
+			device->CopyDescriptorsSimple( 1, destinationHandle, sourceHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV );
+		}
+
+		outTable->gpuHandle = resources->GetGpuHandle( destinationDescriptor, Gfx::SHADER_RESOURCE_HEAP );
+		outTable->descriptorCount = descriptorCount;
+
+		return true;
+	}
+
 	bool CreateDrawTask( MinimalDXApp* app, DrawTask* drawTask )
 	{
 		if ( drawTask == nullptr )
@@ -83,26 +159,20 @@ namespace Gfx
 			return false;
 		}
 
-		RootSignature::createBlitRootSignature(
+		drawTask->descriptorHeap = app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
+
+		// Stupidly hard-coded root signature that we need to fix
+		Gfx::createBlitRootSignature(
 			app->device,
 			drawTask->rootSignature
 		);
 
-		Pipeline::createPSO(
+		Gfx::createPSO(
 			app->device,
 			drawTask->rootSignature,
 			drawTask->pipelineState,
 			drawTask->initResources.vertexShaderName, //L"vsTriangle.hlsl",
 			drawTask->initResources.pixelShaderName //L"psBlit.hlsl"
-		);
-
-		// We need to make the command list that'll execute based off of the PSO we made
-		app->device->CreateCommandList(
-			0, 
-			D3D12_COMMAND_LIST_TYPE_DIRECT, 
-			app->commandAllocator.Get(), 
-			drawTask->pipelineState.Get(), 
-			IID_PPV_ARGS(&app->commandList)
 		);
 
 		{
@@ -113,5 +183,78 @@ namespace Gfx
 			// Reset this until we need to do another vertex buffer upload, not needed anymore since we copied relevant info over
 			drawTask->vertexBufferUpload.Reset();
 		}
+
+		return true;
+	}
+
+	bool CreateComputeTask( MinimalDXApp* app, ComputeTask* computeTask )
+	{
+		if ( computeTask == nullptr )
+		{
+			return false;
+		}
+
+		computeTask->descriptorHeap = app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
+
+		{
+			std::vector<DescriptorIndex> readDescriptorIndices;
+			std::vector<DescriptorIndex> readWriteDescriptorIndices;
+			std::vector<DescriptorIndex> bufferDescriptorIndices;
+			std::vector<DescriptorIndex> dynamicBufferDescriptorIndices;
+
+			for ( Texture* readTexture : computeTask->readTextures )
+			{
+				if ( readTexture == nullptr || !readTexture->srv.IsValid() )
+				{
+					return false;
+				}
+				readDescriptorIndices.push_back( { readTexture->srv.index } );
+			}
+
+			for ( Texture* readWriteTexture : computeTask->readWriteTextures )
+			{
+				if ( readWriteTexture == nullptr || !readWriteTexture->uav.IsValid() )
+				{
+					return false;
+				}
+				readWriteDescriptorIndices.push_back( { readWriteTexture->uav.index } );
+			}
+			
+			for ( Gfx::Buffer* buffer : computeTask->buffers )
+			{
+				if ( buffer == nullptr || !buffer->srv.IsValid() )
+				{
+					return false;
+
+				}
+				bufferDescriptorIndices.push_back( { buffer->srv.index } );
+			}
+
+			for ( Gfx::Buffer* dynamicBuffer : computeTask->dynamicBuffers )
+			{
+				if ( dynamicBuffer == nullptr || !dynamicBuffer->cbv.IsValid() )
+				{
+					return false;
+				}
+				dynamicBufferDescriptorIndices.push_back( { dynamicBuffer->cbv.index } );
+			}
+
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readDescriptorIndices,			&computeTask->bindings.readTextures ) )			return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readWriteDescriptorIndices,		&computeTask->bindings.readWriteTextures ) )	return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, bufferDescriptorIndices,		&computeTask->bindings.buffers ) )				return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, dynamicBufferDescriptorIndices,	&computeTask->bindings.dynamicBuffers ) )		return false;
+		}
+
+		Gfx::BuildComputeRootSignature( app->device, computeTask );
+
+		Gfx::createComputePSO(
+			app->device,
+			computeTask->rootSignature,
+			computeTask->pipelineState,
+			computeTask->initResources.csAssetName,
+			computeTask->initResources.entryPoint
+		);
+
+		return true;
 	}
 }

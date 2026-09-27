@@ -29,12 +29,12 @@ struct MinimalDXApp
 	void WaitForPreviousFrame();
 	void CreateDisplayWindow(HINSTANCE hInstnace, int nCmdShow);
 
+	void ProcessGameState();
 	void Render();
 	void Run();
 	void addTask(std::unique_ptr<Task> task);
 
-	// Something sus, but we roll with it for now.
-	// Do something more advanced later, like multiple buffering?
+	// SOON TO BE DEPRECATED FRAMECOUNT NUMBER!
 	static const uint32_t frameCount = 2;
 	WindowProperties windowProperties = {};
 
@@ -53,9 +53,9 @@ struct MinimalDXApp
 	ComPtr<ID3D12DescriptorHeap> rtvDescriptorHeap;
 	ComPtr<ID3D12DescriptorHeap> shaderResourceHeap;
 	ComPtr<ID3D12Resource> renderTargets[frameCount];
-	ComPtr<ID3D12Resource> screenTexture;
+	ComPtr<ID3D12Resource> screenTextureUAV;
 
-	ResourceManager::GlobalDescriptorHeaps globalDescriptorHeaps;
+	Gfx::Resources resources;
 
 	ComPtr<ID3D12Fence> fence;
 	HANDLE fenceEvent;
@@ -68,5 +68,10 @@ struct MinimalDXApp
 	uint32_t rtvDescriptorSize;
 	uint32_t shaderResourceDescriptorSize;
 	uint32_t* frameNumber;
+
+	CameraConstants cameraConstants = {};
+	
+	Gfx::Texture screenTexture;
+	Gfx::Buffer cameraDataBuffer;
 };
 

@@ -2,22 +2,33 @@
 
 #include "Common.h"
 #include "Mesh.h"
+#include "ResourceManager.h"
+
+struct PreparedDescriptorTable
+{
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = {};
+	uint32_t descriptorCount = 0;
+};
+
+struct PreparedBindings
+{
+	PreparedDescriptorTable readTextures;
+	PreparedDescriptorTable readWriteTextures;
+	PreparedDescriptorTable buffers;
+	PreparedDescriptorTable dynamicBuffers;
+};
 
 class Task
 {
 public:
 	
-	struct InitResources
-	{
-		const char* vertexShaderName;
-		const char* pixelShaderName;
-	};
+	struct InitResources{};
 
 	virtual ~Task() = default;
 
 	virtual void execute(
-		ComPtr<ID3D12GraphicsCommandList> &commandList, 
-		ComPtr<ID3D12CommandAllocator> &commandAllocator,
+		ComPtr<ID3D12GraphicsCommandList> commandList, 
+		ComPtr<ID3D12CommandAllocator> commandAllocator,
 		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
 	) = 0;
 
@@ -26,19 +37,24 @@ public:
 
 	// Pipelines
 	ComPtr<ID3D12PipelineState> pipelineState;
-
-	InitResources initResources;
 };
 
 class DrawTask : public Task
 {
+struct InitResources
+{
+	const char* vertexShaderName;
+	const char* pixelShaderName;
+};
 
 public:
 	// GPU RESOURCES
 	ComPtr<ID3D12Resource> vertexBuffer;
 	ComPtr<ID3D12Resource> vertexBufferUpload;
 
-	ComPtr<ID3D12DescriptorHeap> descriptorHeap = {};
+	Gfx::DescriptorHeap descriptorHeap;
+
+	// hard-coded handle that shouldn't be here
 	D3D12_GPU_DESCRIPTOR_HANDLE srvTableHandle = {};
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 
@@ -46,45 +62,53 @@ public:
 	Mesh* mesh;
 
 	void execute(
-		ComPtr<ID3D12GraphicsCommandList> &commandList, 
-		ComPtr<ID3D12CommandAllocator> &commandAllocator,
+		ComPtr<ID3D12GraphicsCommandList> commandList, 
+		ComPtr<ID3D12CommandAllocator> commandAllocator,
 		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
 	) override;
-};
 
-// Camera buffer information - this should be separately stored outside of compute task...
-struct CameraConstants {
-	XMFLOAT4X4 viewProjInverse;
-	XMFLOAT4 cameraPosition;
-	uint32_t frameNumber;
-	uint32_t padding0[3];
+	InitResources initResources;
 };
 
 class ComputeTask : public Task
 {
-struct DispatchInfo
+struct InitResources
 {
-	uint32_t width;
-	uint32_t height;
+	const char* csAssetName;
+	const char* entryPoint;
+	uint32_t dispatchWidth;
+	uint32_t dispatchHeight;
 };
 
 public:
-	// These resources shouldn't exist for all compute tasks, but alas.
-	ComPtr<ID3D12Resource> mOutputTexture;
-	ComPtr<ID3D12DescriptorHeap> descriptorHeap;
-	D3D12_GPU_DESCRIPTOR_HANDLE mOutputUAVHandle = {};
+	Gfx::DescriptorHeap descriptorHeap;
+	PreparedDescriptorTable descriptorTable;
+	PreparedBindings bindings;
 
-	// Camera buffer information - this should be separately stored outside of compute task...
-	ComPtr<ID3D12Resource> mCameraConstantBuffer;
-	UINT8* mCameraConstantBufferData;
-	CameraConstants mCameraConstants;
+	std::vector<Gfx::Texture*> readTextures;
+	std::vector<Gfx::Texture*> readWriteTextures;
+	std::vector<Gfx::Buffer*> buffers;
+	std::vector<Gfx::Buffer*> dynamicBuffers;
 
-	DispatchInfo dispatchInfo;
+	InitResources initResources;
 
 	void execute(
-		ComPtr<ID3D12GraphicsCommandList> &commandList, 
-		ComPtr<ID3D12CommandAllocator> &commandAllocator,
+		ComPtr<ID3D12GraphicsCommandList> commandList, 
+		ComPtr<ID3D12CommandAllocator> commandAllocator,
 		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle = nullptr
 	) override;
 };
 
+class BarrierTask : public Task
+{
+public:
+	ID3D12Resource* resource = nullptr;
+    D3D12_RESOURCE_STATES stateBefore = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES stateAfter = D3D12_RESOURCE_STATE_COMMON;
+
+	void execute(
+		ComPtr<ID3D12GraphicsCommandList> commandList, 
+		ComPtr<ID3D12CommandAllocator> commandAllocator = nullptr,
+		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle = nullptr
+	) override;
+};

@@ -145,6 +145,7 @@
     <ClInclude Include="MinimalDXApp.h" />
     <ClInclude Include="Pipeline.h" />
     <ClInclude Include="RenderBackend.h" />
+    <ClInclude Include="ResourceHandles.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="RootSignature.h" />
     <ClInclude Include="Settings.h" />

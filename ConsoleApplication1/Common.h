@@ -48,3 +48,11 @@ inline std::wstring GetAssetFullPath( const char* assetName )
 	// Ugly hardcoding for now, but we work with it...
     return exePath + (L"\\..\\..\\shaders\\") + std::wstring(Utf8ToWide(assetName));
 }
+
+// TODO: Move this to some sort of "buffers" or generalized "app" file that stores stuff that shaders can also map to
+struct CameraConstants {
+	XMFLOAT4X4 viewProjInverse;
+	XMFLOAT4 cameraPosition;
+	uint32_t frameNumber;
+	uint32_t padding0[3];
+};

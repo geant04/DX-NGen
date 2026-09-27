@@ -77,6 +77,9 @@
     <ClInclude Include="RenderBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ResourceHandles.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\psTriangle.hlsl">

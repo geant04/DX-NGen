@@ -1,8 +1,8 @@
 #include "Task.h"
 
 void DrawTask::execute(
-	ComPtr<ID3D12GraphicsCommandList> &commandList, 
-	ComPtr<ID3D12CommandAllocator> &commandAllocator,
+	ComPtr<ID3D12GraphicsCommandList> commandList, 
+	ComPtr<ID3D12CommandAllocator> commandAllocator,
     D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
 )
 {
@@ -10,11 +10,12 @@ void DrawTask::execute(
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
 	commandList->SetPipelineState(pipelineState.Get());
 
-    if (descriptorHeap)
+    if ( descriptorHeap.descriptorHeapPtr )
     {
-        ID3D12DescriptorHeap* heaps[] = { descriptorHeap.Get() };
+        // keep this for now
+        ID3D12DescriptorHeap* heaps[] = { descriptorHeap.descriptorHeapPtr.Get() };
         commandList->SetDescriptorHeaps(_countof(heaps), heaps);
-        commandList->SetGraphicsRootDescriptorTable(0, srvTableHandle);
+        commandList->SetGraphicsRootDescriptorTable(0, srvTableHandle );
     }
 
     // Bind RTV
@@ -26,38 +27,57 @@ void DrawTask::execute(
     commandList->DrawInstanced(3, 1, 0, 0);
 }
 
+void BarrierTask::execute(
+	ComPtr<ID3D12GraphicsCommandList> commandList, 
+	ComPtr<ID3D12CommandAllocator> commandAllocator,
+    D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
+)
+{
+    // Barrier transition from PS to UA
+    D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+		resource,
+		stateBefore,
+		stateAfter
+	);
+    commandList->ResourceBarrier(1, &barrier);
+}
+
 void ComputeTask::execute(
-	ComPtr<ID3D12GraphicsCommandList> &commandList, 
-	ComPtr<ID3D12CommandAllocator> &commandAllocator,
+	ComPtr<ID3D12GraphicsCommandList> commandList, 
+	ComPtr<ID3D12CommandAllocator> commandAllocator,
     D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
 )
 {
     // Memcpy update info from CPU to GPU?
-    memcpy(mCameraConstantBufferData, &mCameraConstants, sizeof(mCameraConstants));
+    for ( Gfx::Buffer* buffer : dynamicBuffers )
+    {
+        memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+    }
 
-    // PSO and root signature setup
-    ID3D12DescriptorHeap* heaps[] = { descriptorHeap.Get() };
-    commandList->SetDescriptorHeaps(_countof(heaps), heaps);
     commandList->SetComputeRootSignature(rootSignature.Get());
     commandList->SetPipelineState(pipelineState.Get());
-    commandList->SetComputeRootDescriptorTable(0, mOutputUAVHandle);
-    commandList->SetComputeRootConstantBufferView(1, mCameraConstantBuffer->GetGPUVirtualAddress());
 
-    // Barrier transition from PS to UA
-    D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		mOutputTexture.Get(),
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-		D3D12_RESOURCE_STATE_UNORDERED_ACCESS
-	);
-    commandList->ResourceBarrier(1, &barrier);
+    // PSO and root signature setup
+    if ( descriptorHeap.descriptorHeapPtr )
+    {
+        int bindingSlot = 0;
+        if ( bindings.readTextures.descriptorCount > 0 )
+        {
+             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
+        }
+        if ( bindings.readWriteTextures.descriptorCount > 0 )
+        {
+             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
+        }
+        if ( bindings.buffers.descriptorCount > 0 )
+        {
+             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.buffers.gpuHandle);
+        }      
+        if ( bindings.dynamicBuffers.descriptorCount > 0 )
+        {
+             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.dynamicBuffers.gpuHandle);
+        }
+    }
 
-    commandList->Dispatch(dispatchInfo.width, dispatchInfo.height, 1);
-
-    // Barrier transition back from UA to PS
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		mOutputTexture.Get(),
-        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-	);
-    commandList->ResourceBarrier(1, &barrier);
+    commandList->Dispatch( initResources.dispatchWidth, initResources.dispatchHeight, 1 );
 }
