@@ -74,6 +74,12 @@ namespace Gfx
 		DescriptorIndex cbv;
 	};
 
+	struct Sampler
+	{
+		D3D12_FILTER filterMode;
+		D3D12_TEXTURE_ADDRESS_MODE addressMode;
+	};
+
 	struct Resources
 	{
 		GlobalDescriptorHeaps globalDescriptorHeap;

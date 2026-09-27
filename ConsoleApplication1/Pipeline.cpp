@@ -1,8 +1,10 @@
 #include "Pipeline.h"
 
+#include <iostream>
+
 namespace Gfx {
 
-void createPSO(
+void CreatePSO(
 	const ComPtr<ID3D12Device> &device, 
 	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
@@ -80,7 +82,7 @@ void createPSO(
 	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	psoDesc.SampleDesc.Count = 1;
 
-	device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
+	hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&outPSO));
 
 	if (outPSO == NULL) {
 		// Problem detected, need to log this!
@@ -88,7 +90,7 @@ void createPSO(
 	}
 }
 
-void createComputePSO(
+void CreateComputePSO(
 	ComPtr<ID3D12Device> &device, 
 	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,

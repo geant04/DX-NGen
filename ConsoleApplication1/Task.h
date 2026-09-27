@@ -18,6 +18,13 @@ struct PreparedBindings
 	PreparedDescriptorTable dynamicBuffers;
 };
 
+enum TaskType
+{
+	None = 0,
+	Draw = 1,
+	Compute = 2
+};
+
 class Task
 {
 public:
@@ -32,11 +39,21 @@ public:
 		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
 	) = 0;
 
-	// Shader Resources
 	ComPtr<ID3D12RootSignature> rootSignature;
-
-	// Pipelines
 	ComPtr<ID3D12PipelineState> pipelineState;
+
+	PreparedDescriptorTable descriptorTable;
+	PreparedBindings bindings;
+	Gfx::DescriptorHeap* descriptorHeap = nullptr;
+
+	std::vector<Gfx::Texture*> readTextures;
+	std::vector<Gfx::Texture*> readWriteTextures;
+	std::vector<Gfx::Buffer*> buffers;
+	std::vector<Gfx::Buffer*> dynamicBuffers;
+
+	std::vector<Gfx::Sampler*> staticSamplers;
+
+	virtual TaskType getType() const { return None; }
 };
 
 class DrawTask : public Task
@@ -52,10 +69,6 @@ public:
 	ComPtr<ID3D12Resource> vertexBuffer;
 	ComPtr<ID3D12Resource> vertexBufferUpload;
 
-	Gfx::DescriptorHeap descriptorHeap;
-
-	// hard-coded handle that shouldn't be here
-	D3D12_GPU_DESCRIPTOR_HANDLE srvTableHandle = {};
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 
 	// CPU RESOURCES
@@ -68,6 +81,8 @@ public:
 	) override;
 
 	InitResources initResources;
+
+	virtual TaskType getType() const override { return Draw; }
 };
 
 class ComputeTask : public Task
@@ -81,15 +96,6 @@ struct InitResources
 };
 
 public:
-	Gfx::DescriptorHeap descriptorHeap;
-	PreparedDescriptorTable descriptorTable;
-	PreparedBindings bindings;
-
-	std::vector<Gfx::Texture*> readTextures;
-	std::vector<Gfx::Texture*> readWriteTextures;
-	std::vector<Gfx::Buffer*> buffers;
-	std::vector<Gfx::Buffer*> dynamicBuffers;
-
 	InitResources initResources;
 
 	void execute(
@@ -97,6 +103,8 @@ public:
 		ComPtr<ID3D12CommandAllocator> commandAllocator,
 		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle = nullptr
 	) override;
+
+	virtual TaskType getType() const override { return Compute; }
 };
 
 class BarrierTask : public Task

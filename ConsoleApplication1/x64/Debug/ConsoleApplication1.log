@@ -1,2 +1,11 @@
-﻿  RenderBackend.cpp
+﻿  MinimalDXApp.cpp
+  Pipeline.cpp
+  RenderBackend.cpp
+  RootSignature.cpp
+C:\Users\ge010\OneDrive\Documents\VSprojects\DirectProject\ConsoleApplication1\RootSignature.cpp(26,24): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\ge010\OneDrive\Documents\VSprojects\DirectProject\ConsoleApplication1\RootSignature.cpp(27,29): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\ge010\OneDrive\Documents\VSprojects\DirectProject\ConsoleApplication1\RootSignature.cpp(28,26): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\ge010\OneDrive\Documents\VSprojects\DirectProject\ConsoleApplication1\RootSignature.cpp(29,26): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+  main.cpp
+  Generating Code...
   ConsoleApplication1.vcxproj -> C:\Users\ge010\OneDrive\Documents\VSprojects\DirectProject\x64\Debug\ConsoleApplication1.exe

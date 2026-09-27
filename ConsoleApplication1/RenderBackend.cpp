@@ -152,6 +152,65 @@ namespace Gfx
 		return true;
 	}
 
+	static bool PrepareBindings( MinimalDXApp* app, Task* task )
+	{
+		if ( app != nullptr && task != nullptr )
+		{
+			std::vector<DescriptorIndex> readDescriptorIndices;
+			std::vector<DescriptorIndex> readWriteDescriptorIndices;
+			std::vector<DescriptorIndex> bufferDescriptorIndices;
+			std::vector<DescriptorIndex> dynamicBufferDescriptorIndices;
+
+			for ( Texture* readTexture : task->readTextures )
+			{
+				if ( readTexture == nullptr || !readTexture->srv.IsValid() )
+				{
+					return false;
+				}
+				readDescriptorIndices.push_back( { readTexture->srv.index } );
+			}
+
+			for ( Texture* readWriteTexture : task->readWriteTextures )
+			{
+				if ( readWriteTexture == nullptr || !readWriteTexture->uav.IsValid() )
+				{
+					return false;
+				}
+				readWriteDescriptorIndices.push_back( { readWriteTexture->uav.index } );
+			}
+			
+			for ( Gfx::Buffer* buffer : task->buffers )
+			{
+				if ( buffer == nullptr || !buffer->srv.IsValid() )
+				{
+					return false;
+
+				}
+				bufferDescriptorIndices.push_back( { buffer->srv.index } );
+			}
+
+			for ( Gfx::Buffer* dynamicBuffer : task->dynamicBuffers )
+			{
+				if ( dynamicBuffer == nullptr || !dynamicBuffer->cbv.IsValid() )
+				{
+					return false;
+				}
+				dynamicBufferDescriptorIndices.push_back( { dynamicBuffer->cbv.index } );
+			}
+
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readDescriptorIndices,			&task->bindings.readTextures ) )		return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readWriteDescriptorIndices,		&task->bindings.readWriteTextures ) )	return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, bufferDescriptorIndices,		&task->bindings.buffers ) )				return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, dynamicBufferDescriptorIndices,	&task->bindings.dynamicBuffers ) )		return false;
+		}
+		else
+		{
+			return false;
+		}
+
+		return true;
+	}
+
 	bool CreateDrawTask( MinimalDXApp* app, DrawTask* drawTask )
 	{
 		if ( drawTask == nullptr )
@@ -159,20 +218,21 @@ namespace Gfx
 			return false;
 		}
 
-		drawTask->descriptorHeap = app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
+		drawTask->descriptorHeap = &app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
 
-		// Stupidly hard-coded root signature that we need to fix
-		Gfx::createBlitRootSignature(
-			app->device,
-			drawTask->rootSignature
-		);
+		if ( !PrepareBindings( app, drawTask ) )
+		{
+			return false;
+		}
 
-		Gfx::createPSO(
+		Gfx::BuildRootSignature( app->device, drawTask );
+
+		Gfx::CreatePSO(
 			app->device,
 			drawTask->rootSignature,
 			drawTask->pipelineState,
-			drawTask->initResources.vertexShaderName, //L"vsTriangle.hlsl",
-			drawTask->initResources.pixelShaderName //L"psBlit.hlsl"
+			drawTask->initResources.vertexShaderName,
+			drawTask->initResources.pixelShaderName
 		);
 
 		{
@@ -194,60 +254,16 @@ namespace Gfx
 			return false;
 		}
 
-		computeTask->descriptorHeap = app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
+		computeTask->descriptorHeap = &app->resources.globalDescriptorHeap.shaderResourceGlobalHeap;
 
+		if ( !PrepareBindings( app, computeTask ) )
 		{
-			std::vector<DescriptorIndex> readDescriptorIndices;
-			std::vector<DescriptorIndex> readWriteDescriptorIndices;
-			std::vector<DescriptorIndex> bufferDescriptorIndices;
-			std::vector<DescriptorIndex> dynamicBufferDescriptorIndices;
-
-			for ( Texture* readTexture : computeTask->readTextures )
-			{
-				if ( readTexture == nullptr || !readTexture->srv.IsValid() )
-				{
-					return false;
-				}
-				readDescriptorIndices.push_back( { readTexture->srv.index } );
-			}
-
-			for ( Texture* readWriteTexture : computeTask->readWriteTextures )
-			{
-				if ( readWriteTexture == nullptr || !readWriteTexture->uav.IsValid() )
-				{
-					return false;
-				}
-				readWriteDescriptorIndices.push_back( { readWriteTexture->uav.index } );
-			}
-			
-			for ( Gfx::Buffer* buffer : computeTask->buffers )
-			{
-				if ( buffer == nullptr || !buffer->srv.IsValid() )
-				{
-					return false;
-
-				}
-				bufferDescriptorIndices.push_back( { buffer->srv.index } );
-			}
-
-			for ( Gfx::Buffer* dynamicBuffer : computeTask->dynamicBuffers )
-			{
-				if ( dynamicBuffer == nullptr || !dynamicBuffer->cbv.IsValid() )
-				{
-					return false;
-				}
-				dynamicBufferDescriptorIndices.push_back( { dynamicBuffer->cbv.index } );
-			}
-
-			if ( !PrepareDescriptorTable( app->device, &app->resources, readDescriptorIndices,			&computeTask->bindings.readTextures ) )			return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, readWriteDescriptorIndices,		&computeTask->bindings.readWriteTextures ) )	return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, bufferDescriptorIndices,		&computeTask->bindings.buffers ) )				return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, dynamicBufferDescriptorIndices,	&computeTask->bindings.dynamicBuffers ) )		return false;
+			return false;
 		}
 
-		Gfx::BuildComputeRootSignature( app->device, computeTask );
+		Gfx::BuildRootSignature( app->device, computeTask );
 
-		Gfx::createComputePSO(
+		Gfx::CreateComputePSO(
 			app->device,
 			computeTask->rootSignature,
 			computeTask->pipelineState,

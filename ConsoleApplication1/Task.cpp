@@ -10,12 +10,25 @@ void DrawTask::execute(
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
 	commandList->SetPipelineState(pipelineState.Get());
 
-    if ( descriptorHeap.descriptorHeapPtr )
+    if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
     {
-        // keep this for now
-        ID3D12DescriptorHeap* heaps[] = { descriptorHeap.descriptorHeapPtr.Get() };
-        commandList->SetDescriptorHeaps(_countof(heaps), heaps);
-        commandList->SetGraphicsRootDescriptorTable(0, srvTableHandle );
+        int bindingSlot = 0;
+        if ( bindings.readTextures.descriptorCount > 0 )
+        {
+             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
+        }
+        if ( bindings.readWriteTextures.descriptorCount > 0 )
+        {
+             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
+        }
+        if ( bindings.buffers.descriptorCount > 0 )
+        {
+             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.buffers.gpuHandle);
+        }      
+        if ( bindings.dynamicBuffers.descriptorCount > 0 )
+        {
+             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.dynamicBuffers.gpuHandle);
+        }
     }
 
     // Bind RTV
@@ -58,7 +71,7 @@ void ComputeTask::execute(
     commandList->SetPipelineState(pipelineState.Get());
 
     // PSO and root signature setup
-    if ( descriptorHeap.descriptorHeapPtr )
+    if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
     {
         int bindingSlot = 0;
         if ( bindings.readTextures.descriptorCount > 0 )

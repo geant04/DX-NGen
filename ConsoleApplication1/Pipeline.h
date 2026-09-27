@@ -4,7 +4,7 @@
 
 namespace Gfx {
 	
-void createPSO(
+void CreatePSO(
 	const ComPtr<ID3D12Device> &device, 
 	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,
@@ -12,7 +12,7 @@ void createPSO(
 	const char* psAssetName
 );
 
-void createComputePSO(
+void CreateComputePSO(
 	ComPtr<ID3D12Device> &device, 
 	ComPtr<ID3D12RootSignature> &rootSignature, 
 	ComPtr<ID3D12PipelineState> &outPSO,

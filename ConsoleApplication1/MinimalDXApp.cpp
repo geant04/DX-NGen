@@ -48,12 +48,6 @@ void MinimalDXApp::CreateDisplayWindow(HINSTANCE hInstance, int nCmdShow)
 	ShowWindow(windowProperties.g_hWnd, nCmdShow);
 }
 
-
-/*
-Very straightforward program, goes over the esssential basics to making sure our DX12 program can run smoothly.
-The code works in a very sequential order, initializing everything important we need.
-I think there should be a destructor of some sort implemented later on, but we'll worry about it later.
-*/
 void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 {
 	UINT factoryFlags = 0;
@@ -151,21 +145,12 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 	}
 }
 
-
-// Responsible for PSO creation and compiling vert/pixel shaders
 void MinimalDXApp::BuildTaskList()
 {
 	const uint32_t screenTextureMips = 1;
 	const uint32_t screenTextureSamples = 1;
 	const uint32_t screenWidth = windowProperties.mWidth;
 	const uint32_t screenHeight = windowProperties.mHeight;
-
-	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
-	{
-		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
-		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
-		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
-	}
 	
 	std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
 	{
@@ -180,14 +165,26 @@ void MinimalDXApp::BuildTaskList()
 		pathTraceTask->initResources.entryPoint = "CSMain";
 		pathTraceTask->initResources.dispatchWidth = (windowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
 		pathTraceTask->initResources.dispatchHeight = (windowProperties.mHeight + 7) / 8;
+	}
 
-		if ( !Gfx::CreateComputeTask( this, pathTraceTask.get() ) )
+	if ( !Gfx::CreateComputeTask( this, pathTraceTask.get() ) )
+	{
+		return;
+	}
+
+	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
+	{
+		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
+		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
+		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
+		drawScreen->readTextures.push_back( &screenTexture );
+		drawScreen->staticSamplers.push_back( &bilinearSamplerClamp );
 		{
-			return;
+			bilinearSamplerClamp.filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			bilinearSamplerClamp.addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 		}
 	}
 
-	drawScreen->srvTableHandle = resources.GetGpuHandle( screenTexture.srv, Gfx::SHADER_RESOURCE_HEAP );
 	if ( !Gfx::CreateDrawTask( this, drawScreen.get() ) )
 	{
 		return;
@@ -212,15 +209,15 @@ void MinimalDXApp::BuildTaskList()
 		screenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	}
 
-	tasks.push_back(std::move(screenSrvToUav));
-	tasks.push_back(std::move(pathTraceTask));
-	tasks.push_back(std::move(screenUavToSrv));
-	tasks.push_back(std::move(drawScreen));
+	tasks.push_back( std::move( screenSrvToUav ) );
+	tasks.push_back( std::move( pathTraceTask ) );
+	tasks.push_back( std::move( screenUavToSrv ) );
+	tasks.push_back( std::move( drawScreen ) );
 }
 
-void MinimalDXApp::addTask(std::unique_ptr<Task> task)
+void MinimalDXApp::AddTask( std::unique_ptr<Task> task )
 {
-	tasks.push_back(std::move(task));
+	tasks.push_back( std::move( task ) );
 }
 
 void MinimalDXApp::ProcessGameState()
@@ -233,6 +230,7 @@ void MinimalDXApp::ProcessGameState()
 	}
 }
 
+// TOOD: need to move this to render backend, there is too much backend work done here
 void MinimalDXApp::Render()
 {
     // Get the current back buffer handle
@@ -252,11 +250,13 @@ void MinimalDXApp::Render()
 	commandList->SetDescriptorHeaps( _countof(descriptorHeaps), descriptorHeaps );
 
     // Set viewport and scissor rect
-    D3D12_VIEWPORT viewport = {0.0f, 0.0f, static_cast<float>(windowProperties.mWidth), static_cast<float>(windowProperties.mHeight), 0.0f, 1.0f};
-    D3D12_RECT scissorRect = {0, 0, windowProperties.mWidth, windowProperties.mHeight};
-	commandList->RSSetViewports(1, &viewport);
-    commandList->RSSetScissorRects(1, &scissorRect);
+    D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>( windowProperties.mWidth ), static_cast<float>( windowProperties.mHeight ), 0.0f, 1.0f };
+    D3D12_RECT scissorRect = { 0, 0, windowProperties.mWidth, windowProperties.mHeight };
+	commandList->RSSetViewports( 1, &viewport );
+    commandList->RSSetScissorRects( 1, &scissorRect );
 
+	// I can't quite abstract this away into tasks because this changes dynamically, though it would be
+	// interesting to see if we can support dynamic tasks? probably not a good idea though
 	// Transition the back buffer to render target
     D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
 		resources.swapChainTextures[frameIndex].resource.Get(),
@@ -269,9 +269,9 @@ void MinimalDXApp::Render()
     FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
     commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
-	for (auto& task : tasks)
+	for ( auto& task : tasks )
 	{	
-		task->execute(commandList, commandAllocator, &rtvHandle);
+		task->execute( commandList, commandAllocator, &rtvHandle );
 	}
 	
     // Transition back buffer to present

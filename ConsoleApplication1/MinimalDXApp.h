@@ -32,7 +32,7 @@ struct MinimalDXApp
 	void ProcessGameState();
 	void Render();
 	void Run();
-	void addTask(std::unique_ptr<Task> task);
+	void AddTask(std::unique_ptr<Task> task);
 
 	// SOON TO BE DEPRECATED FRAMECOUNT NUMBER!
 	static const uint32_t frameCount = 2;
@@ -69,9 +69,10 @@ struct MinimalDXApp
 	uint32_t shaderResourceDescriptorSize;
 	uint32_t* frameNumber;
 
+	// PERSISTENT RESOURCES
 	CameraConstants cameraConstants = {};
-	
 	Gfx::Texture screenTexture;
+	Gfx::Sampler bilinearSamplerClamp;
 	Gfx::Buffer cameraDataBuffer;
 };
 

@@ -21,7 +21,7 @@ void createBlitRootSignature(
 	ComPtr<ID3D12RootSignature> &outRootSignature
 );
 
-void BuildComputeRootSignature( ComPtr<ID3D12Device> device, ComputeTask* task );
+void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task );
 
 };
 
