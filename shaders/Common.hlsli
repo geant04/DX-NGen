@@ -3,6 +3,7 @@
 
 // Header file used for various things, such as defining structs, and random functions.
 // Will need a dedicated shader file for uniform rng() ray generation code when we path-trace eventually.
+#define PI 3.14159265359f
 
 struct Material
 {

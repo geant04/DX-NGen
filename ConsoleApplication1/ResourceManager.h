@@ -2,6 +2,9 @@
 
 #include "Common.h"
 #include "ResourceHandles.h"
+#include "Mesh.h"
+#include "Model.h"
+#include <vector>
 
 #define SWAPCHAIN_COUNT 2
 
@@ -11,7 +14,7 @@ namespace Gfx
 
 	enum HeapType
 	{
-		RTV_HEAP, SHADER_RESOURCE_HEAP, SAMPLER_HEAP
+		RTV_HEAP, DSV_HEAP, SHADER_RESOURCE_HEAP, SAMPLER_HEAP
 	};
 
 	struct DescriptorHeap
@@ -43,6 +46,7 @@ namespace Gfx
 	struct GlobalDescriptorHeaps
 	{
 		DescriptorHeap rtvGlobalHeap = {};
+		DescriptorHeap dsvGlobalHeap = {};
 		DescriptorHeap shaderResourceGlobalHeap = {};
 		DescriptorHeap samplerGlobalHeap = {};
 	};
@@ -57,6 +61,7 @@ namespace Gfx
 		DescriptorIndex srv;
 		DescriptorIndex uav;
 		DescriptorIndex rtv;
+		DescriptorIndex dsv;
 	};
 
 	struct Buffer
@@ -90,6 +95,8 @@ namespace Gfx
 			{
 				case RTV_HEAP:
 					return &globalDescriptorHeap.rtvGlobalHeap;
+				case DSV_HEAP:
+					return &globalDescriptorHeap.dsvGlobalHeap;
 				case SHADER_RESOURCE_HEAP:
 					return &globalDescriptorHeap.shaderResourceGlobalHeap;
 				case SAMPLER_HEAP:
@@ -133,26 +140,62 @@ namespace Gfx
 
 		// Global resources
 		Texture swapChainTextures[SWAPCHAIN_COUNT];
+		Texture* swapChainOutputTexture;
+		
+		Texture textures[100];
+		Buffer buffers[100];
+		Sampler samplers[100];
+		Model models[10];
+		Mesh meshes[10];
+
+		uint32_t textureCount = 0;
+		uint32_t bufferCount = 0;
+		uint32_t samplerCount = 0;
+		uint32_t meshCount = 0;
+		uint32_t modelCount = 0;
+
+		Mesh* globalFullScreenTriangleMesh;
+		Mesh* globalTestCubeMesh;
+
+		Model globalTestTriangle;
+		Model globalTestCube;
+		Model globalTestFloor;
 	};
 
 
 	// Build global descriptor heaps
 	// - Allocate a global amount of resources that we can re-use
 	// - global samplers
-	// - global SRV texture slots
-	// - global CBV texture slots
+	// - global RTVs
+	// - global DSVs
+	// - global shader resources
 	void CreateGlobalDescriptorHeaps( ComPtr<ID3D12Device> device, GlobalDescriptorHeaps &globalDescriptorHeaps );
 	
 	// Allocate funcs
 	bool AllocateRenderTargetView( ComPtr<ID3D12Device> device, const DescriptorHeap *rtvGlobalHeap, Texture* texture );
+	bool AllocateDepthStencilView( ComPtr<ID3D12Device> device, DescriptorHeap *dsvGlobalheap, Texture* texture );
 	bool AllocateShaderResourceView( ComPtr<ID3D12Device> device, const DescriptorHeap *shaderResourceHeap, Texture* texture );
 
 	// General purpose resource creation functions
 	void CreateSwapChainRTVs( ComPtr<ID3D12Device> device, ComPtr<IDXGISwapChain4> swapChain, Resources* resources, uint32_t frameCount );
 
 	bool CreateReadTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
-	
+
+	bool CreateRTV( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
+
 	bool CreateRWTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
-	
+
 	bool CreateConstantBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources, void* data, const UINT sizeInBytes, const UINT cpuDataSize );
+
+	bool CreateDepthTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
+
+	bool CreateStencilTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
+
+	bool CreateTextureFromImage( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, const char* file );
+
+	Texture* AddTexture( Resources* resources );
+	Buffer* AddBuffer( Resources* resources );
+	Sampler* AddSampler( Resources* resources );
+	Mesh* AddMesh( Resources* resources );
+	Model* AddModel( Resources* resources );
 } // namespace ResourceManager

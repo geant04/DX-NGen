@@ -16,6 +16,9 @@
     <Filter Include="Support">
       <UniqueIdentifier>{9e103154-a333-4598-8c49-d8f474622acd}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{f08ec085-3bf5-4ac4-a33f-2e05dad60b8b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -80,25 +83,45 @@
     <ClInclude Include="ResourceHandles.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Model.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ImageLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\shaders\psTriangle.hlsl">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="..\shaders\vsTriangle.hlsl">
-      <Filter>Source Files</Filter>
+    <None Include="..\shaders\Common.hlsli">
+      <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\csPathTracer.hlsl">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="..\shaders\psBlit.hlsl">
-      <Filter>Source Files</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\Intersections.hlsl">
-      <Filter>Source Files</Filter>
+      <Filter>Shaders</Filter>
     </None>
-    <None Include="..\shaders\Common.hlsli">
-      <Filter>Source Files</Filter>
+    <None Include="..\shaders\psBlit.hlsl">
+      <Filter>Shaders</Filter>
     </None>
+    <None Include="..\shaders\psTriangle.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\vsTriangle.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\CommonBuffers.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\litGeometry.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\vsGeometry.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\shaders\sky.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

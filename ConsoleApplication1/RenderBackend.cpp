@@ -8,7 +8,7 @@ namespace Gfx
 {
 	static void UploadMeshBuffer( MinimalDXApp* app, DrawTask* drawTask )
 	{
-		const Mesh* mesh = drawTask->mesh;
+		const Mesh* mesh = drawTask->model->mesh;
 		const ComPtr<ID3D12Device> device = app->device;
 
 		// Upload CPU to GPU memory using defaultHeap
@@ -227,13 +227,7 @@ namespace Gfx
 
 		Gfx::BuildRootSignature( app->device, drawTask );
 
-		Gfx::CreatePSO(
-			app->device,
-			drawTask->rootSignature,
-			drawTask->pipelineState,
-			drawTask->initResources.vertexShaderName,
-			drawTask->initResources.pixelShaderName
-		);
+		Gfx::CreatePSO( app->device, drawTask );
 
 		{
 			Gfx::UploadMeshBuffer( app, drawTask );

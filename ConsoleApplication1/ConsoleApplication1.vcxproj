@@ -104,6 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -139,10 +140,13 @@
     <ClCompile Include="Task.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Camera.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="Common.h" />
+    <ClInclude Include="ImageLoader.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MinimalDXApp.h" />
+    <ClInclude Include="Model.h" />
     <ClInclude Include="Pipeline.h" />
     <ClInclude Include="RenderBackend.h" />
     <ClInclude Include="ResourceHandles.h" />
@@ -153,6 +157,7 @@
     <ClInclude Include="WinInclude.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\shaders\CommonBuffers.hlsli" />
     <None Include="..\shaders\Common.hlsli" />
     <None Include="..\shaders\Intersections.hlsl" />
     <None Include="..\shaders\psTriangle.hlsl">
@@ -165,6 +170,15 @@
       <FileType>Document</FileType>
     </None>
     <None Include="..\shaders\psBlit.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\litGeometry.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\vsGeometry.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\sky.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

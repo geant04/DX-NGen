@@ -12,17 +12,17 @@
 struct PSOuput
 {
     float4 position : SV_POSITION;
-    float4 color : COLOR;
+    float4 normal : NORMAL;
     float2 texCoord : TEXCOORD;
 };
 
-PSOuput VSMain(float4 position : POSITION, float4 color : COLOR, float2 texCoord : TEXCOORD)
+PSOuput VSMain( float4 position : POSITION, float4 normal : NORMAL, float2 texCoord : TEXCOORD )
 {
     PSOuput result;
 
     result.position = position;
     result.texCoord = texCoord;
-    result.color = color;
+    result.normal = normal;
 
     return result;
 }

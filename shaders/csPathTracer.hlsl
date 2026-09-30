@@ -1,12 +1,15 @@
+#include "Common.hlsli"
+#include "CommonBuffers.hlsli"
+
 RWTexture2D<float4> outputTexture : register(u0);
+
 cbuffer CameraConstants : register(b0)
 {
-	float4x4 viewProjInverse;
-	float4 cameraPosition;
-	uint frameNumber;
+	CameraConstantsData data;
 }
 
-#include "Common.hlsli"
+#define FURNACE_TEST 0
+static const float FURNACE_RADIANCE = 1.0f;
 
 // Scene details
 static const Sphere sphere = 
@@ -92,15 +95,31 @@ static const Plane wallPlane3 =
 };
 static const Plane lightPlane =
 {
-	float3(0.0f, 3.0f, 7.0f),
+	float3(0.0f, 3.0f, 4.0f),
 	normalize(float3(0.0f, 1.0f, -1.0f)),
-	float2(7.0f, 7.0f),
+	float2(1.0f, 1.0f),
 	{
-		2.5f * float3(0.88f, 0.88f, 0.88f),
+		10.0f * float3(0.88f, 0.88f, 0.88f),
 		0.0f,
 		0.0f,
-		true
+		true //  emissive
 	}
+};
+
+static const Sphere furnaceDiffuse =
+{
+	float3(0.0f, 5.0f, 0.0f), 1.0f,
+	{ float3(1.0f, 1.0f, 1.0f), 0.0f, 0.0f, false }
+};
+static const Sphere furnaceMetal =
+{
+	float3(2.2f, 5.0f, 0.0f), 0.75f,
+	{ float3(1.0f, 1.0f, 1.0f), 1.0f, 0.0f, false }
+};
+static const Sphere furnaceGlass =
+{
+	float3(-2.2f, 5.0f, 0.0f), 0.75f,
+	{ float3(1.0f, 1.0f, 1.0f), 0.0f, 1.0f, false }
 };
 
 static const float3 lightPosition = float3(0.0, 2.0, 5.0f);
@@ -114,6 +133,8 @@ void GetIntersection(in Ray ray, inout Intersect intersect)
 	intersect.isHit = false;
 	
 	// Will expand upon this later when we have more geometry with more complex intersection tests.
+	
+#if !FURNACE_TEST
 	GetPlaneIntersection(groundPlane, ray, intersect);
 	GetPlaneIntersection(wallPlane1, ray, intersect);
 	GetPlaneIntersection(wallPlane2, ray, intersect);
@@ -122,21 +143,30 @@ void GetIntersection(in Ray ray, inout Intersect intersect)
 	GetSphereIntersection(sphere, ray, intersect);
 	GetSphereIntersection(metalSphere, ray, intersect);
 	GetSphereIntersection(glassSphere, ray, intersect);
+#endif // #if !FURNACE_TEST
+#if FURNACE_TEST
+	GetSphereIntersection(furnaceDiffuse, ray, intersect);
+	GetSphereIntersection(furnaceMetal, ray, intersect);
+	GetSphereIntersection(furnaceGlass, ray, intersect);
+#endif // #if FURNACE_TEST
 }
 
 float3 GetDiffuseWi(in float3 worldNormal, inout uint state)
 {
-	float randR = rng(state);
-	float randG = rng(state);
+	float u1 = rng(state);
+	float u2 = rng(state);
 	
-	float2 randXY = 2.0f * float2(randR, randG) - 1.0f;
-	
-	// Get tangent and bitangent vectors from worldNormal
-	float3 referenceUp = abs(worldNormal.z) > 0.999 ? float3(0.0f, 1.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
+	// Cosine-weighted hemisphere sample (local space, z = normal)
+	float r = sqrt(u1);
+	float phi = 2.0f * PI * u2;
+	float3 local = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0f, 1.0f - u1)));
+
+	// Build an orthonormal basis around the normal
+	float3 referenceUp = abs(worldNormal.z) > 0.999f ? float3(0.0f, 1.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
 	float3 tangent = normalize(cross(referenceUp, worldNormal));
 	float3 bitangent = cross(worldNormal, tangent);
 
-	return normalize(worldNormal + tangent * randXY.x + bitangent * randXY.y);
+	return normalize(tangent * local.x + bitangent * local.y + worldNormal * local.z);
 }
 
 // inDir vector points "outwards", if that makes sense.
@@ -206,6 +236,9 @@ float3 NaivePathTracer(in Ray ray, uint iterations, inout uint state)
 		// Hit nothing - i.e the sky
 		if (!intersect.isHit)
 		{
+#if FURNACE_TEST
+			return FURNACE_RADIANCE * outColor;
+#endif // #if FURNACE_TEST
 			return 0.0f;
 		}
 		
@@ -220,14 +253,7 @@ float3 NaivePathTracer(in Ray ray, uint iterations, inout uint state)
 		float3 bsdfColor = GetReflectance(cosThetaI, intersect.material); // intersect.material.color;
 		float3 sampleDirection = GetWi(-ray.direction, normal, intersect.material, state);
 		
-		float lambert = max(dot(normal, sampleDirection), 0.0f);
-		
-		if (intersect.material.metallic > 0.0f || intersect.material.transmissive > 0.0f)
-		{
-			lambert = 1.0f;
-		}
-		
-		outColor *= bsdfColor * lambert;
+		outColor *= bsdfColor;
 		ray.direction = sampleDirection;
 		ray.origin = intersect.position + ray.direction * 0.0001f;
 	}
@@ -288,7 +314,7 @@ float3 NaiveRayTracer(in Ray ray, in float3 animatedLightPosition)
 void CSMain( uint3 id : SV_DispatchThreadID )
 {	
 	// RNG setup
-	uint state = initRNG(id.xy, frameNumber);
+	uint state = initRNG(id.xy, data.frameNumber);
 	
 	// AA jitter hack
 	float2 jitter = float2(rng(state), rng(state));
@@ -319,7 +345,12 @@ void CSMain( uint3 id : SV_DispatchThreadID )
 	
 	// Lane-independent smoothing call
 	float3 accumulatedColor = outputTexture[id.xy].rgb;
-	outColor = lerp(accumulatedColor, outColor, 1.0f / (frameNumber));
+	if ( data.resetPathTracer )
+	{
+		accumulatedColor = float3( 0.0f, 0.0f, 0.0f );
+	}
+	
+	outColor = lerp(accumulatedColor, outColor, 1.0f / (data.frameNumber + 1));
 	
 	// float randR = rng(id.xy * frameNumber);
 	outputTexture[id.xy] = float4(outColor, 1);

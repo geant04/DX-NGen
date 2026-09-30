@@ -5,19 +5,73 @@
 #include "RenderBackend.h"
 #include "Settings.h"
 #include <iostream>
+#include <windowsx.h>
 
 #define SIMPLE_TEST false
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+// GLOBAL VARS
+bool usePathTracingMode = false;
+bool resetPathTracer = true;
+
+bool isLeftMouseDown = false;
+int lastMouseX = 0;
+int lastMouseY = 0;
+int deltaMouseX = 0;
+int deltaMouseY = 0;
+
+LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
-	switch(message)
+	switch ( message )
 	{
-	case WM_DESTROY: PostQuitMessage(0); return 0;
-	default: return DefWindowProc(hWnd, message, wParam, lParam);
+	case WM_LBUTTONDOWN:
+		std::cout << "isMoving"  << std::endl;
+
+		isLeftMouseDown = true;
+		lastMouseX = LOWORD( lParam );
+		lastMouseY = HIWORD( lParam );
+		SetCapture( hWnd );
+		return 0;
+
+	case WM_LBUTTONUP:
+		isLeftMouseDown = false;
+		deltaMouseX = 0;
+		deltaMouseY = 0;
+		ReleaseCapture();
+		return 0;
+
+	case WM_MOUSEMOVE:
+		if ( isLeftMouseDown )
+		{
+			int mouseX = LOWORD( lParam );
+			int mouseY = HIWORD( lParam );
+			deltaMouseX += mouseX - lastMouseX;
+			deltaMouseY += mouseY - lastMouseY;
+			lastMouseX = mouseX;
+			lastMouseY = mouseY;
+		}
+		return 0;
+
+	case WM_KEYDOWN:
+		if ( wParam == 'M' && !( lParam & ( 1 << 30 ) ) )
+		{
+			if ( !usePathTracingMode )
+			{
+				resetPathTracer = true;
+			}
+			usePathTracingMode = !usePathTracingMode;
+		}
+		return 0;
+	
+	case WM_DESTROY:
+		PostQuitMessage( 0 );
+		return 0;
+	
+	default:
+		return DefWindowProc( hWnd, message, wParam, lParam );
 	}
 }
 
-void MinimalDXApp::CreateDisplayWindow(HINSTANCE hInstance, int nCmdShow)
+void MinimalDXApp::CreateDisplayWindow( HINSTANCE hInstance, int nCmdShow )
 {
 	// Populate the WindowProperties struct with stuff copied from GPT.
 	// Not gonna bother figuring out how the window is made. Not the priority here.
@@ -128,6 +182,7 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 	{
 		Gfx::CreateGlobalDescriptorHeaps( device, resources.globalDescriptorHeap );
 		Gfx::CreateSwapChainRTVs( device, swapChain, &resources, SWAPCHAIN_COUNT );
+		resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 	}
 
 	// Might need a reminder of commandAllocator's purpose?
@@ -143,6 +198,15 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 			// TODO: Need some error handling/validation
 		}
 	}
+
+	{
+		// random stuff
+		resources.globalFullScreenTriangleMesh = &Mesh::GenerateFullScreenTriangle();
+		resources.globalTestTriangle.mesh = resources.globalFullScreenTriangleMesh;
+
+		resources.globalTestCubeMesh = &Mesh::GenerateCube( 1.0f );
+		resources.globalTestCube.mesh = resources.globalTestCubeMesh;
+	}
 }
 
 void MinimalDXApp::BuildTaskList()
@@ -151,15 +215,31 @@ void MinimalDXApp::BuildTaskList()
 	const uint32_t screenTextureSamples = 1;
 	const uint32_t screenWidth = windowProperties.mWidth;
 	const uint32_t screenHeight = windowProperties.mHeight;
-	
-	std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
-	{
-		pathTraceTask->readWriteTextures.push_back( &screenTexture );
-		pathTraceTask->dynamicBuffers.push_back( &cameraDataBuffer );
 
-		Gfx::CreateRWTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
-		Gfx::CreateReadTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
-		Gfx::CreateConstantBuffer( device, &cameraDataBuffer, &resources, &cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+	Gfx::Texture* screenTexture = Gfx::AddTexture( &resources );
+	Gfx::Texture* sceneDepthTexture = Gfx::AddTexture( &resources );
+	Gfx::Buffer* cameraDataBuffer = Gfx::AddBuffer( &resources );
+	Gfx::Sampler* bilinearSamplerClamp = Gfx::AddSampler( &resources );
+	
+	// Model* testCubeModel = Gfx::AddModel( &resources );
+	//testCubeModel = &resources.globalTestCube;
+	resources.globalTestCube.mesh = resources.globalTestCubeMesh;
+
+	Model* testFloorModel = Gfx::AddModel( &resources );
+	testFloorModel->mesh = resources.globalTestCube.mesh;
+
+	Model* fullScreenTriangle = Gfx::AddModel( &resources );
+	fullScreenTriangle = &resources.globalTestTriangle;
+
+	Gfx::CreateRWTexture( device, screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+	Gfx::CreateReadTexture( device, screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+	Gfx::CreateConstantBuffer( device, cameraDataBuffer, &resources, &cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+	Gfx::CreateRTV( device, screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+
+	std::shared_ptr<ComputeTask> pathTraceTask = std::make_shared<ComputeTask>();
+	{
+		pathTraceTask->readWriteTextures.push_back( screenTexture );
+		pathTraceTask->dynamicBuffers.push_back( cameraDataBuffer );
 
 		pathTraceTask->initResources.csAssetName = "csPathTracer.hlsl";
 		pathTraceTask->initResources.entryPoint = "CSMain";
@@ -172,17 +252,22 @@ void MinimalDXApp::BuildTaskList()
 		return;
 	}
 
-	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
+	std::shared_ptr<DrawTask> drawScreen = std::make_shared<DrawTask>();
 	{
-		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
+		drawScreen->model = fullScreenTriangle;
 		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
 		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
-		drawScreen->readTextures.push_back( &screenTexture );
-		drawScreen->staticSamplers.push_back( &bilinearSamplerClamp );
+		drawScreen->readTextures.push_back( screenTexture );
+		drawScreen->staticSamplers.push_back( bilinearSamplerClamp );
 		{
-			bilinearSamplerClamp.filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-			bilinearSamplerClamp.addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+			bilinearSamplerClamp->filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			bilinearSamplerClamp->addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 		}
+		drawScreen->clearRenderTarget = false;
+		drawScreen->depthTest = false;
+		drawScreen->outputToBackBuffer = true;
+		drawScreen->dynamicBuffers.push_back( cameraDataBuffer );
+		drawScreen->BindRenderTargets( { screenTexture }, nullptr, &resources );
 	}
 
 	if ( !Gfx::CreateDrawTask( this, drawScreen.get() ) )
@@ -195,29 +280,115 @@ void MinimalDXApp::BuildTaskList()
 		WaitForPreviousFrame();
 	}
 
-	std::unique_ptr<BarrierTask> screenSrvToUav = std::make_unique<BarrierTask>();
+	std::shared_ptr<BarrierTask> screenSrvToUav = std::make_shared<BarrierTask>();
 	{
-		screenSrvToUav->resource = screenTexture.resource.Get();
+		screenSrvToUav->resource = screenTexture->resource.Get();
 		screenSrvToUav->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		screenSrvToUav->stateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 	}
 
-	std::unique_ptr<BarrierTask> screenUavToSrv = std::make_unique<BarrierTask>();
+	std::shared_ptr<BarrierTask> screenSrvToRtv = std::make_shared<BarrierTask>();
+	{
+		screenSrvToRtv->resource = screenTexture->resource.Get();
+		screenSrvToRtv->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		screenSrvToRtv->stateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	}
+
+	std::shared_ptr<BarrierTask> screenRtvToSrv = std::make_shared<BarrierTask>();
+	{
+		screenRtvToSrv->resource = screenTexture->resource.Get();
+		screenRtvToSrv->stateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		screenRtvToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	}
+
+	std::shared_ptr<BarrierTask> screenUavToSrv = std::make_shared<BarrierTask>();
 	{	
-		screenUavToSrv->resource = screenTexture.resource.Get();
+		screenUavToSrv->resource = screenTexture->resource.Get();
 		screenUavToSrv->stateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		screenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	}
 
-	tasks.push_back( std::move( screenSrvToUav ) );
-	tasks.push_back( std::move( pathTraceTask ) );
-	tasks.push_back( std::move( screenUavToSrv ) );
-	tasks.push_back( std::move( drawScreen ) );
-}
+	// Temp disabling these tasks and only pushing drawScreen, which now does "draw cube" actually
+	pathTracingTasks.push_back( screenSrvToUav );
+	pathTracingTasks.push_back( pathTraceTask );
+	pathTracingTasks.push_back( screenUavToSrv );
+	pathTracingTasks.push_back( drawScreen );
 
-void MinimalDXApp::AddTask( std::unique_ptr<Task> task )
-{
-	tasks.push_back( std::move( task ) );
+	std::shared_ptr<DrawTask> drawSky = std::make_shared<DrawTask>();
+	{
+		drawSky->model = fullScreenTriangle;
+		drawSky->dynamicBuffers.push_back( cameraDataBuffer );
+		drawSky->initResources.vertexShaderName = "vsTriangle.hlsl";
+		drawSky->initResources.pixelShaderName = "sky.hlsl";
+		drawSky->clearRenderTarget = false;
+		drawSky->depthTest = false;
+		drawSky->outputToBackBuffer = false;
+		drawSky->BindRenderTargets( { screenTexture }, nullptr, &resources );
+	}
+
+	if ( !Gfx::CreateDrawTask( this, drawSky.get() ) )
+	{
+		return;
+	}
+
+	std::shared_ptr<DrawTask> drawTestCube = std::make_shared<DrawTask>();
+	{
+		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
+		
+		drawTestCube->model = &resources.globalTestCube;
+		{
+			Gfx::Buffer* cubeConstantBuffer = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, cubeConstantBuffer, &resources, &drawTestCube->drawConstants, 
+				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			drawTestCube->dynamicBuffers.push_back( cubeConstantBuffer );
+		}
+		drawTestCube->initResources.vertexShaderName = "vsGeometry.hlsl";
+		drawTestCube->initResources.pixelShaderName = "litGeometry.hlsl";
+		drawTestCube->clearRenderTarget = false;
+		drawTestCube->clearDepth = true;
+		drawTestCube->depthTest = true;
+		drawTestCube->outputToBackBuffer = false;
+		drawTestCube->BindRenderTargets( { screenTexture }, sceneDepthTexture, &resources );
+	}
+	
+	if ( !Gfx::CreateDrawTask( this, drawTestCube.get() ) )
+	{
+		return;
+	}
+
+	std::shared_ptr<DrawTask> drawTestFloor = std::make_shared<DrawTask>();
+	{
+		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
+
+		drawTestFloor->model = testFloorModel;
+		drawTestFloor->model->transform.Scale( { 10.0f, 0.5f, 10.0f } );
+		drawTestFloor->model->transform.Translate( { 0.0f, -0.75f, 0.0f } );
+		{
+			Gfx::Buffer* floorConstantBuffer = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, floorConstantBuffer, &resources, &drawTestFloor->drawConstants, 
+				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			drawTestFloor->dynamicBuffers.push_back( floorConstantBuffer );
+		}
+		drawTestFloor->initResources.vertexShaderName = "vsGeometry.hlsl";
+		drawTestFloor->initResources.pixelShaderName = "litGeometry.hlsl";
+		drawTestFloor->clearRenderTarget = false;
+		drawTestFloor->clearDepth = false;
+		drawTestFloor->depthTest = true;
+		drawTestFloor->outputToBackBuffer = false;
+		drawTestFloor->BindRenderTargets( { screenTexture }, sceneDepthTexture, &resources );
+	}
+	
+	if ( !Gfx::CreateDrawTask( this, drawTestFloor.get() ) )
+	{
+		return;
+	}
+
+	tasks.push_back( screenSrvToRtv );
+	tasks.push_back( drawSky );
+	tasks.push_back( drawTestCube );
+	tasks.push_back( drawTestFloor );
+	tasks.push_back( screenRtvToSrv );
+	tasks.push_back( drawScreen );
 }
 
 void MinimalDXApp::ProcessGameState()
@@ -226,7 +397,63 @@ void MinimalDXApp::ProcessGameState()
 	// basically processing changes and stuff from the client
 
 	{
-		cameraConstants.frameNumber++;
+		// need to implement/generate camera matrix stuff here
+		// we are rebuilding the camera every frame! gosh this is horrible...
+		float fovY = cameraData.fov;
+		float aspectRatio = static_cast<float>( windowProperties.mWidth ) / static_cast<float>( windowProperties.mHeight );
+		float nearZ = cameraData.nearZ;
+		float farZ = cameraData.farZ;
+		
+		// Camera update code
+		{
+			if ( deltaMouseX != 0 || deltaMouseY != 0 )
+			{
+				cameraData.yaw	 -= static_cast<float>( deltaMouseX ) * cameraData.sensitivity;
+				cameraData.pitch += static_cast<float>( deltaMouseY ) * cameraData.sensitivity;
+
+				deltaMouseX = 0;
+				deltaMouseY = 0;
+			}
+
+			const float pitchLimit = XM_PIDIV2 - 0.05f;
+			cameraData.pitch = std::max( -pitchLimit, std::min( pitchLimit, cameraData.pitch ) );
+
+			float cosPitch = cosf( cameraData.pitch );
+			float sinPitch = sinf( cameraData.pitch );
+			float cosYaw = cosf( cameraData.yaw );
+			float sinYaw = sinf( cameraData.yaw );
+
+			XMVECTOR target = XMLoadFloat4( &cameraData.at );
+			XMVECTOR offset = XMVectorSet(
+				cameraData.orbitRadius * cosPitch * sinYaw,
+				cameraData.orbitRadius * sinPitch,
+				cameraData.orbitRadius * cosPitch * cosYaw,
+				0.0f
+			);
+
+			XMStoreFloat4( &cameraData.eye, XMVectorAdd( target, offset ) );
+		}
+
+		cameraConstants.cameraPosition = cameraData.eye;
+
+		const XMVECTOR& eye = XMLoadFloat4( &cameraData.eye );
+		const XMVECTOR& at  = XMLoadFloat4( &cameraData.at );
+		const XMVECTOR& up  = XMLoadFloat4( &cameraData.up );
+		XMMATRIX view = XMMatrixLookAtLH( eye, at, up );
+		XMMATRIX projection = XMMatrixPerspectiveFovLH( fovY, aspectRatio, nearZ, farZ );
+		cameraData.viewProj = view * projection;
+
+		cameraConstants.resetPathTracer = resetPathTracer;
+
+		if ( resetPathTracer )
+		{
+			resetPathTracer = false;
+			cameraConstants.frameNumber = 1;
+		}
+		else
+		{
+			cameraConstants.frameNumber++;
+		}
 	}
 }
 
@@ -234,7 +461,7 @@ void MinimalDXApp::ProcessGameState()
 void MinimalDXApp::Render()
 {
     // Get the current back buffer handle
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = resources.GetCpuHandle( resources.swapChainTextures[frameIndex].rtv, Gfx::RTV_HEAP );
+    resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 
 	// Reset command allocator & list
 	commandAllocator->Reset();
@@ -265,13 +492,36 @@ void MinimalDXApp::Render()
 	);
     commandList->ResourceBarrier(1, &barrier);
 
-    // Clear the render target
-    FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+	if ( usePathTracingMode )
+	{
+		for ( auto& task : pathTracingTasks )
+		{	
+			task->execute( commandList, commandAllocator, &resources );
+		}
+	}
+	else
+	{
+		for ( auto& task : tasks )
+		{	
+			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
+			{
+				if ( !drawTask->dynamicBuffers.empty() )
+				{
+					// update model matrix hack
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					*cb = cameraConstants;	// camera position, frame number, etc.
+					
+					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					const XMMATRIX& viewProj = cameraData.viewProj;
+					const XMMATRIX modelViewProj = model * viewProj;
+					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
 
-	for ( auto& task : tasks )
-	{	
-		task->execute( commandList, commandAllocator, &rtvHandle );
+					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
+					XMStoreFloat4x4( &cb->viewProjInverse,  viewProjInverse );
+				}
+			}
+			task->execute( commandList, commandAllocator, &resources );
+		}
 	}
 	
     // Transition back buffer to present
