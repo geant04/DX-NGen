@@ -95,7 +95,7 @@ namespace Gfx
 	{
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = texture->format;
+		srvDesc.Format = texture->srvFormat;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels = texture->mips;
 
@@ -153,6 +153,8 @@ namespace Gfx
 	{
 		Texture texture;
 		texture.format = format;
+		// temp thing
+		texture.srvFormat = format;
 		texture.mips = mips;
 		 
 		D3D12_RESOURCE_DESC textureDesc = {};
@@ -194,6 +196,7 @@ namespace Gfx
 	{
 		Texture texture;
 		texture.format = format;
+		texture.srvFormat = ( format == DXGI_FORMAT_D16_UNORM ) ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_UNKNOWN;
 		texture.mips = mips;
 
 		if ( !isDepth )
@@ -370,7 +373,14 @@ namespace Gfx
 
 	Texture* AddTexture( Resources* resources )
 	{
+		resources->textures[resources->textureCount].textureId = resources->textureCount;
+
 		return &resources->textures[resources->textureCount++];
+	}
+
+	RenderTarget* AddRenderTarget( Resources* resources )
+	{
+		return &resources->renderTargets[resources->renderTargetCount++];
 	}
 
 	Buffer* AddBuffer( Resources* resources )

@@ -56,12 +56,28 @@ namespace Gfx
 		ComPtr<ID3D12Resource> resource;
 
 		DXGI_FORMAT format;
+		DXGI_FORMAT srvFormat;
+
 		uint32_t mips;
 
 		DescriptorIndex srv;
 		DescriptorIndex uav;
 		DescriptorIndex rtv;
 		DescriptorIndex dsv;
+
+		unsigned int textureId;
+		unsigned int width;
+		unsigned int height;
+	};
+
+	struct RenderTarget
+	{
+		Texture* rtvTexture;
+
+		int viewportWidth;
+		int viewportHeight;
+		int scissorWidth;
+		int scissorHeight;
 	};
 
 	struct Buffer
@@ -142,6 +158,7 @@ namespace Gfx
 		Texture swapChainTextures[SWAPCHAIN_COUNT];
 		Texture* swapChainOutputTexture;
 		
+		RenderTarget renderTargets[10];
 		Texture textures[100];
 		Buffer buffers[100];
 		Sampler samplers[100];
@@ -153,6 +170,7 @@ namespace Gfx
 		uint32_t samplerCount = 0;
 		uint32_t meshCount = 0;
 		uint32_t modelCount = 0;
+		uint32_t renderTargetCount = 0;
 
 		Mesh* globalFullScreenTriangleMesh;
 		Mesh* globalTestCubeMesh;
@@ -198,4 +216,5 @@ namespace Gfx
 	Sampler* AddSampler( Resources* resources );
 	Mesh* AddMesh( Resources* resources );
 	Model* AddModel( Resources* resources );
+	RenderTarget* AddRenderTarget( Resources* resources );
 } // namespace ResourceManager

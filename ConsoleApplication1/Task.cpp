@@ -37,14 +37,50 @@ void DrawTask::execute(
         }
     }
 
-	if ( renderTargetHandles.empty() )
+	if ( renderTargetHandles.empty() && !depthStencilTarget )
     {
-		std::cout << "ERROR: empty render targets!" << std::endl;
+		std::cout << "ERROR: empty render and depth targets!" << std::endl;
 		return;
 	}
 
+	// Set viewport and scissor rect
+	const unsigned int numRenderTargetHandles = renderTargetHandles.size();
+	const unsigned int numRenderTargetTextures = renderTargets.size();
+	
+	if ( numRenderTargetHandles != numRenderTargetTextures )
+	{
+		std::cout << "ERROR: mismatch numRenderTargetHandles and numRenderTargetTexture!";
+		return;
+	}
+
+	std::vector<D3D12_VIEWPORT> viewports( numRenderTargetTextures );
+	std::vector<D3D12_RECT> scissorRects( numRenderTargetTextures );
+
+	for ( unsigned int i = 0; i < numRenderTargetTextures; i++ )
+	{
+		Gfx::RenderTarget* renderTarget = renderTargets[i];
+
+		viewports[i] = { 0.0f, 0.0f, static_cast<float>( renderTarget->viewportWidth ), static_cast<float>( renderTarget->viewportHeight ), 0.0f, 1.0f };
+		scissorRects[i] = { 0, 0, renderTarget->scissorWidth, renderTarget->scissorHeight };
+	}
+
+	if ( numRenderTargetTextures == 0 )
+	{
+		D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>( viewportWidth ), static_cast<float>( viewportHeight ), 0.0f, 1.0f };
+		D3D12_RECT scissorRect = { 0, 0, static_cast<LONG>( viewportWidth ), static_cast<LONG>( viewportHeight ) };
+
+		commandList->RSSetViewports( 1, &viewport );
+		commandList->RSSetScissorRects( 1, &scissorRect );
+	}
+	else
+	{
+		commandList->RSSetViewports( numRenderTargetTextures, &viewports[0] );
+		commandList->RSSetScissorRects( numRenderTargetTextures, &scissorRects[0] );
+	}
+
 	D3D12_CPU_DESCRIPTOR_HANDLE swapChainHandle = resources->GetCpuHandle( resources->swapChainOutputTexture->rtv, Gfx::RTV_HEAP );
-	D3D12_CPU_DESCRIPTOR_HANDLE* rtvHandlePtr = outputToBackBuffer ? &swapChainHandle : &renderTargetHandles[0];
+	D3D12_CPU_DESCRIPTOR_HANDLE* rtvHandlePtr = ( numRenderTargetTextures > 0 ) ? &renderTargetHandles[0] : nullptr;
+	rtvHandlePtr = outputToBackBuffer ? &swapChainHandle : rtvHandlePtr;
 	D3D12_CPU_DESCRIPTOR_HANDLE* depthStencilHandlePtr = nullptr;
 
 	if ( clearRenderTarget )
@@ -98,19 +134,26 @@ void DrawTask::execute(
 	commandList->DrawInstanced( model->mesh->vertexCount, 1, 0, 0 );
 }
 
-bool DrawTask::BindRenderTargets( std::vector<Gfx::Texture*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources )
+bool DrawTask::BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources )
 {
-	if ( renderTargets.empty() )
+	if ( renderTargets.empty() && !depthStencilTarget )
 	{
-		// Need at least one render target!
+		// Need at least one render/depth target!
+		std::cout << "ERROR: no render target or depth target!" << std::endl;
 		return false;
 	}
 
 	this->renderTargets = renderTargets;
 
-	for ( Gfx::Texture* rtvTexture : renderTargets )
+	for ( Gfx::RenderTarget* renderTarget : renderTargets )
 	{
-		renderTargetHandles.push_back( resources->GetCpuHandle( rtvTexture->rtv, Gfx::RTV_HEAP ) );
+		if ( !renderTarget )
+		{
+			std::cout << "ERROR: encountered a null renderTarrget in BindRenderTargets!";
+			return false;
+		}
+
+		renderTargetHandles.push_back( resources->GetCpuHandle( renderTarget->rtvTexture->rtv, Gfx::RTV_HEAP ) );
 	}
 	
 	if ( depthStencilTarget != nullptr )

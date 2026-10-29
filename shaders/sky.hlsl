@@ -14,14 +14,31 @@ struct PSInput
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-	float2 uv = input.texCoord;
+	float2 ndc = input.texCoord * 2.0f - 1.0f;
+	ndc.y = 1.0f - ndc.y;
+
+	float4 nearPoint = mul( data.viewProjInverse, float4( ndc, 0.0f, 1.0f ) );
+	float4 farPoint = mul( data.viewProjInverse, float4( ndc, 1.0f, 1.0f ) );
+
+	nearPoint /= nearPoint.w;
+	farPoint /= farPoint.w;
+
+	float3 viewDirection = normalize( farPoint.xyz - nearPoint.xyz );
 	
-	// Map screen UV to a view direction used for sky-texture sampling
-	float2 ndc = uv * 2.0f - 1.0f;
-	float4 worldPos = mul( data.viewProjInverse, float4( ndc, 0.0f, 0.0f ) );
-	float3 viewDirection = normalize( worldPos.xyz - data.cameraPosition.xyz );
+	float skyLerp = saturate( viewDirection.y * 0.5f + 0.5f );
+	float3 horizonColor = float3( 0.796f, 0.894f, 1.0f );
+	float3 zenithColor = float3( 0.318f, 0.58f, 0.851f );
+	float3 skyColor = lerp( horizonColor, zenithColor, skyLerp );
 	
-	float viewY = viewDirection.y;
-	
-    return float4( viewDirection, 1.0f );
+	float3 sunDir = normalize( -data.sunDirection );
+
+	float sunAlignment = saturate( dot( viewDirection, sunDir ) );
+	float sunDisc = pow( sunAlignment, 2048.0f );
+	float sunGlow = pow( sunAlignment, 32.0f );
+	float3 sunColor = float3( 1.0f, 0.75f, 0.35f );
+
+	skyColor += sunColor * sunGlow * 0.25f;
+	skyColor += sunColor * sunDisc * 4.0f;
+
+	return float4( skyColor, 1.0f );
 }

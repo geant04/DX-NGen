@@ -39,6 +39,11 @@ inline std::wstring Utf8ToWide( const char* value )
 
 inline std::wstring GetAssetFullPath( const char* assetName )
 {
+	if ( !assetName )
+	{
+		return L"\0";
+	}
+
 	wchar_t buffer[MAX_PATH];
 	GetModuleFileNameW(NULL, buffer, MAX_PATH);
 

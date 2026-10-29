@@ -73,8 +73,6 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 
 void MinimalDXApp::CreateDisplayWindow( HINSTANCE hInstance, int nCmdShow )
 {
-	// Populate the WindowProperties struct with stuff copied from GPT.
-	// Not gonna bother figuring out how the window is made. Not the priority here.
 	WNDCLASSEX wc = {};
 	wc.cbSize = sizeof(WNDCLASSEX);
 	wc.lpfnWndProc = WndProc;
@@ -206,6 +204,16 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 
 		resources.globalTestCubeMesh = &Mesh::GenerateCube( 1.0f );
 		resources.globalTestCube.mesh = resources.globalTestCubeMesh;
+
+		// set sun camera view proj matrix
+		const XMVECTOR target = XMVectorSet( 0.0f, 0.0f, 0.0f, 1.0f );
+		const float lightDistance = 20.0f;
+		const XMVECTOR eye = XMVectorSubtract( target, XMVectorScale( sunDirection, lightDistance ) );
+		const XMVECTOR up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
+		const XMMATRIX view = XMMatrixLookAtLH( eye, target, up );
+		const XMMATRIX projection = XMMatrixOrthographicLH( 24.0f, 24.0f, 1.0f, 50.0f );
+
+		shadowCameraData.viewProj = view * projection;
 	}
 }
 
@@ -220,6 +228,7 @@ void MinimalDXApp::BuildTaskList()
 	Gfx::Texture* sceneDepthTexture = Gfx::AddTexture( &resources );
 	Gfx::Buffer* cameraDataBuffer = Gfx::AddBuffer( &resources );
 	Gfx::Sampler* bilinearSamplerClamp = Gfx::AddSampler( &resources );
+	Gfx::RenderTarget* screenRenderTarget = Gfx::AddRenderTarget( &resources );
 	
 	// Model* testCubeModel = Gfx::AddModel( &resources );
 	//testCubeModel = &resources.globalTestCube;
@@ -235,6 +244,16 @@ void MinimalDXApp::BuildTaskList()
 	Gfx::CreateReadTexture( device, screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
 	Gfx::CreateConstantBuffer( device, cameraDataBuffer, &resources, &cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 	Gfx::CreateRTV( device, screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
+
+	// Shadow draw tasks... Need to refactor this in such a way that:
+	// 1. let every object have a shadowCaster flag or something
+	// 2. process all geometry separately and automatically generate draw tasks from there
+	// 3. if above works, then the same logic maps for shadows
+	// This is a temporary hack because I want to say "I added shadow maps!" to my engine.
+	const unsigned int shadowMapSize = 512;
+	Gfx::Texture* sunShadowMap = Gfx::AddTexture( &resources );
+	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D16_UNORM, 1 );
+	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R16_UNORM, 1 );
 
 	std::shared_ptr<ComputeTask> pathTraceTask = std::make_shared<ComputeTask>();
 	{
@@ -267,7 +286,14 @@ void MinimalDXApp::BuildTaskList()
 		drawScreen->depthTest = false;
 		drawScreen->outputToBackBuffer = true;
 		drawScreen->dynamicBuffers.push_back( cameraDataBuffer );
-		drawScreen->BindRenderTargets( { screenTexture }, nullptr, &resources );
+
+		screenRenderTarget->rtvTexture = screenTexture;
+		screenRenderTarget->viewportWidth = screenWidth;
+		screenRenderTarget->viewportHeight = screenHeight;
+		screenRenderTarget->scissorWidth = screenWidth;
+		screenRenderTarget->scissorHeight = screenHeight;
+
+		drawScreen->BindRenderTargets( { screenRenderTarget }, nullptr, &resources );
 	}
 
 	if ( !Gfx::CreateDrawTask( this, drawScreen.get() ) )
@@ -277,41 +303,41 @@ void MinimalDXApp::BuildTaskList()
 
 	// Sync
 	{
+		// These wait for previous frame calls don't really matter in-practice.
+		// This is because we aren't dynamically changing resources. This call isn't ran every frame.
 		WaitForPreviousFrame();
 	}
 
-	std::shared_ptr<BarrierTask> screenSrvToUav = std::make_shared<BarrierTask>();
+	std::shared_ptr<BarrierTask> barrierScreenSrvToUav = Gfx::CreateBarrierTask( 
+		screenTexture, 
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS );
+
+	std::shared_ptr<BarrierTask> barrierScreenSrvToRtv = std::make_shared<BarrierTask>();
 	{
-		screenSrvToUav->resource = screenTexture->resource.Get();
-		screenSrvToUav->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		screenSrvToUav->stateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		barrierScreenSrvToRtv->resource = screenTexture->resource.Get();
+		barrierScreenSrvToRtv->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		barrierScreenSrvToRtv->stateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	}
 
-	std::shared_ptr<BarrierTask> screenSrvToRtv = std::make_shared<BarrierTask>();
+	std::shared_ptr<BarrierTask> barrierScreenRtvToSrv = std::make_shared<BarrierTask>();
 	{
-		screenSrvToRtv->resource = screenTexture->resource.Get();
-		screenSrvToRtv->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		screenSrvToRtv->stateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		barrierScreenRtvToSrv->resource = screenTexture->resource.Get();
+		barrierScreenRtvToSrv->stateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		barrierScreenRtvToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	}
 
-	std::shared_ptr<BarrierTask> screenRtvToSrv = std::make_shared<BarrierTask>();
-	{
-		screenRtvToSrv->resource = screenTexture->resource.Get();
-		screenRtvToSrv->stateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		screenRtvToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	}
-
-	std::shared_ptr<BarrierTask> screenUavToSrv = std::make_shared<BarrierTask>();
+	std::shared_ptr<BarrierTask> barrierScreenUavToSrv = std::make_shared<BarrierTask>();
 	{	
-		screenUavToSrv->resource = screenTexture->resource.Get();
-		screenUavToSrv->stateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		screenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		barrierScreenUavToSrv->resource = screenTexture->resource.Get();
+		barrierScreenUavToSrv->stateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		barrierScreenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	}
 
 	// Temp disabling these tasks and only pushing drawScreen, which now does "draw cube" actually
-	pathTracingTasks.push_back( screenSrvToUav );
+	pathTracingTasks.push_back( barrierScreenSrvToUav );
 	pathTracingTasks.push_back( pathTraceTask );
-	pathTracingTasks.push_back( screenUavToSrv );
+	pathTracingTasks.push_back( barrierScreenUavToSrv );
 	pathTracingTasks.push_back( drawScreen );
 
 	std::shared_ptr<DrawTask> drawSky = std::make_shared<DrawTask>();
@@ -320,10 +346,11 @@ void MinimalDXApp::BuildTaskList()
 		drawSky->dynamicBuffers.push_back( cameraDataBuffer );
 		drawSky->initResources.vertexShaderName = "vsTriangle.hlsl";
 		drawSky->initResources.pixelShaderName = "sky.hlsl";
+
 		drawSky->clearRenderTarget = false;
 		drawSky->depthTest = false;
 		drawSky->outputToBackBuffer = false;
-		drawSky->BindRenderTargets( { screenTexture }, nullptr, &resources );
+		drawSky->BindRenderTargets( { screenRenderTarget }, nullptr, &resources );
 	}
 
 	if ( !Gfx::CreateDrawTask( this, drawSky.get() ) )
@@ -336,19 +363,22 @@ void MinimalDXApp::BuildTaskList()
 		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
 		
 		drawTestCube->model = &resources.globalTestCube;
+		drawTestCube->model->transform.Translate( { 0.0f, 0.0f, 0.0f } );
 		{
 			Gfx::Buffer* cubeConstantBuffer = Gfx::AddBuffer( &resources );
 			Gfx::CreateConstantBuffer( device, cubeConstantBuffer, &resources, &drawTestCube->drawConstants, 
 				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 			drawTestCube->dynamicBuffers.push_back( cubeConstantBuffer );
 		}
+		drawTestCube->readTextures.push_back( sunShadowMap );
+		drawTestCube->staticSamplers.push_back( bilinearSamplerClamp );
 		drawTestCube->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawTestCube->initResources.pixelShaderName = "litGeometry.hlsl";
+		drawTestCube->initResources.pixelShaderName = "psLitGeometry.hlsl";
 		drawTestCube->clearRenderTarget = false;
 		drawTestCube->clearDepth = true;
 		drawTestCube->depthTest = true;
 		drawTestCube->outputToBackBuffer = false;
-		drawTestCube->BindRenderTargets( { screenTexture }, sceneDepthTexture, &resources );
+		drawTestCube->BindRenderTargets( { screenRenderTarget }, sceneDepthTexture, &resources );
 	}
 	
 	if ( !Gfx::CreateDrawTask( this, drawTestCube.get() ) )
@@ -358,8 +388,6 @@ void MinimalDXApp::BuildTaskList()
 
 	std::shared_ptr<DrawTask> drawTestFloor = std::make_shared<DrawTask>();
 	{
-		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
-
 		drawTestFloor->model = testFloorModel;
 		drawTestFloor->model->transform.Scale( { 10.0f, 0.5f, 10.0f } );
 		drawTestFloor->model->transform.Translate( { 0.0f, -0.75f, 0.0f } );
@@ -369,13 +397,15 @@ void MinimalDXApp::BuildTaskList()
 				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 			drawTestFloor->dynamicBuffers.push_back( floorConstantBuffer );
 		}
+		drawTestFloor->readTextures.push_back( sunShadowMap );
+		drawTestFloor->staticSamplers.push_back( bilinearSamplerClamp );
 		drawTestFloor->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawTestFloor->initResources.pixelShaderName = "litGeometry.hlsl";
+		drawTestFloor->initResources.pixelShaderName = "psLitGeometry.hlsl";
 		drawTestFloor->clearRenderTarget = false;
 		drawTestFloor->clearDepth = false;
 		drawTestFloor->depthTest = true;
 		drawTestFloor->outputToBackBuffer = false;
-		drawTestFloor->BindRenderTargets( { screenTexture }, sceneDepthTexture, &resources );
+		drawTestFloor->BindRenderTargets( { screenRenderTarget }, sceneDepthTexture, &resources );
 	}
 	
 	if ( !Gfx::CreateDrawTask( this, drawTestFloor.get() ) )
@@ -383,12 +413,106 @@ void MinimalDXApp::BuildTaskList()
 		return;
 	}
 
-	tasks.push_back( screenSrvToRtv );
+	std::shared_ptr<DrawTask> drawCubeShadow = std::make_shared<DrawTask>();
+	std::shared_ptr<DrawTask> drawFloorShadow = std::make_shared<DrawTask>();
+	{
+		{
+			Gfx::Buffer* shadowCubeConstantBuffer = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, shadowCubeConstantBuffer, &resources, &drawCubeShadow->drawConstants, 
+				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			drawCubeShadow->dynamicBuffers.push_back( shadowCubeConstantBuffer );
+
+			Gfx::Buffer* shadowFloorConstantBuffer = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, shadowFloorConstantBuffer, &resources, &drawFloorShadow->drawConstants, 
+				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			drawFloorShadow->dynamicBuffers.push_back( shadowFloorConstantBuffer );
+		}
+
+		drawCubeShadow->model = drawTestCube->model;
+		drawFloorShadow->model = drawTestFloor->model;
+		
+		drawCubeShadow->initResources.vertexShaderName = "vsGeometry.hlsl";
+		drawCubeShadow->initResources.pixelShaderName = nullptr;
+		drawCubeShadow->clearDepth = true;
+		drawCubeShadow->depthTest = true;
+		drawCubeShadow->viewportWidth = shadowMapSize;
+		drawCubeShadow->viewportHeight = shadowMapSize;
+		drawCubeShadow->BindRenderTargets( {}, sunShadowMap, &resources );
+		
+		drawFloorShadow->initResources.vertexShaderName = "vsGeometry.hlsl";
+		drawFloorShadow->initResources.pixelShaderName = nullptr;
+		drawFloorShadow->clearDepth = false;
+		drawFloorShadow->depthTest = true;
+		drawFloorShadow->viewportWidth = shadowMapSize;
+		drawFloorShadow->viewportHeight = shadowMapSize;
+		drawFloorShadow->BindRenderTargets( {}, sunShadowMap, &resources );
+	}
+
+	if ( !Gfx::CreateDrawTask( this, drawCubeShadow.get() ) )
+	{
+		return;
+	}
+	if ( !Gfx::CreateDrawTask( this, drawFloorShadow.get() ) )
+	{
+		return;
+	}
+
+	shadowTasks.push_back( drawCubeShadow );
+	shadowTasks.push_back( drawFloorShadow );
+
+	Gfx::RenderTarget* debugRenderTarget = Gfx::AddRenderTarget( &resources );
+	// Gfx::Texture* scratchBuffer = Gfx::AddTexture( &resources );
+	std::shared_ptr<DrawTask> drawDebugView = std::make_shared<DrawTask>();
+	{
+		// Gfx::CreateReadTexture( device, scratchBuffer, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8_UNORM, 1 );
+		drawDebugView->model = fullScreenTriangle;
+		drawDebugView->initResources.vertexShaderName = "vsTriangle.hlsl";
+		drawDebugView->initResources.pixelShaderName = "psDebug.hlsl";
+
+		drawDebugView->clearRenderTarget = false;
+		drawDebugView->clearDepth = false;
+		drawDebugView->depthTest = false;
+		drawDebugView->outputToBackBuffer = true;
+
+		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R16_UNORM, 1 );
+		drawDebugView->readTextures.push_back( sunShadowMap ); // this should not work because I didn't make a dedicated SRV for this? we'll find out
+		drawDebugView->staticSamplers.push_back( bilinearSamplerClamp );
+
+		debugRenderTarget->rtvTexture = screenTexture;
+		debugRenderTarget->viewportWidth = static_cast<unsigned int>( 256 );
+		debugRenderTarget->viewportHeight = static_cast<unsigned int>( 256 );
+		debugRenderTarget->scissorWidth = static_cast<unsigned int>( debugRenderTarget->viewportWidth );
+		debugRenderTarget->scissorHeight = static_cast<unsigned int>( debugRenderTarget->viewportHeight );
+
+		drawDebugView->BindRenderTargets( { debugRenderTarget }, nullptr, &resources );
+	}
+		
+	if ( !Gfx::CreateDrawTask( this, drawDebugView.get() ) )
+	{
+		return;
+	}
+
+	
+	std::shared_ptr<BarrierTask> barrierDepthToSrv = Gfx::CreateBarrierTask( 
+		sunShadowMap, 
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
+	std::shared_ptr<BarrierTask> barrierSrvToDepth = Gfx::CreateBarrierTask( 
+		sunShadowMap, 
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE );
+
+	tasks.push_back( barrierDepthToSrv );
+	tasks.push_back( barrierScreenSrvToRtv );
 	tasks.push_back( drawSky );
 	tasks.push_back( drawTestCube );
 	tasks.push_back( drawTestFloor );
-	tasks.push_back( screenRtvToSrv );
+	tasks.push_back( barrierScreenRtvToSrv );
 	tasks.push_back( drawScreen );
+	{
+		tasks.push_back( drawDebugView );
+		tasks.push_back( barrierSrvToDepth );
+	}
 }
 
 void MinimalDXApp::ProcessGameState()
@@ -501,6 +625,27 @@ void MinimalDXApp::Render()
 	}
 	else
 	{
+		for ( auto& task : shadowTasks )
+		{	
+			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
+			{
+				if ( !drawTask->dynamicBuffers.empty() )
+				{
+					// update model matrix hack
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					*cb = cameraConstants;	// camera position, frame number, etc.
+					
+					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					const XMMATRIX& viewProj = shadowCameraData.viewProj;
+					const XMMATRIX modelViewProj = model * viewProj;
+					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
+
+					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
+					XMStoreFloat4x4( &cb->viewProjInverse,  viewProjInverse );
+				}
+			}
+			task->execute( commandList, commandAllocator, &resources );
+		}
 		for ( auto& task : tasks )
 		{	
 			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
@@ -514,10 +659,13 @@ void MinimalDXApp::Render()
 					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
 					const XMMATRIX& viewProj = cameraData.viewProj;
 					const XMMATRIX modelViewProj = model * viewProj;
+					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;
 					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
 
 					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
-					XMStoreFloat4x4( &cb->viewProjInverse,  viewProjInverse );
+					XMStoreFloat4x4( &cb->viewProjInverse, viewProjInverse );
+					XMStoreFloat4x4( &cb->lightViewProj, lightModelViewProj );
+					XMStoreFloat3( &cb->sunDirection, sunDirection );
 				}
 			}
 			task->execute( commandList, commandAllocator, &resources );

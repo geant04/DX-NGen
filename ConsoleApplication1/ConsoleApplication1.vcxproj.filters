@@ -89,6 +89,12 @@
     <ClInclude Include="ImageLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CustomOptional.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\Common.hlsli">
@@ -118,10 +124,7 @@
     <None Include="..\shaders\vsGeometry.hlsl">
       <Filter>Shaders</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="..\shaders\sky.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
+    <None Include="..\shaders\sky.hlsl" />
+    <None Include="..\shaders\psDebug.hlsl" />
   </ItemGroup>
 </Project>

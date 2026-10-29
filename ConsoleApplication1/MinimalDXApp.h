@@ -63,6 +63,7 @@ struct MinimalDXApp
 
 	// Miscellanious things
 	std::vector<std::shared_ptr<Task>> tasks;
+	std::vector<std::shared_ptr<Task>> shadowTasks;
 	std::vector<std::shared_ptr<Task>> pathTracingTasks;
 
 	uint32_t frameIndex;
@@ -73,6 +74,10 @@ struct MinimalDXApp
 	// PERSISTENT RESOURCES
 	CameraConstants cameraConstants = {};
 	Camera cameraData = {};
+
+	// Assume there's just one shadow camera for now
+	Camera shadowCameraData = {};
+	XMVECTOR sunDirection = XMVector3Normalize( XMVectorSet( -0.5f, -1.0f, -0.5f, 0.0f ) );
 
 	//Gfx::Texture screenTexture;
 	//Gfx::Sampler bilinearSamplerClamp;

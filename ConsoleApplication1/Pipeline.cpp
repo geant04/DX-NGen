@@ -11,6 +11,8 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 	const char* vsAssetName = drawTask->initResources.vertexShaderName;
 	const char* psAssetName = drawTask->initResources.pixelShaderName;
 
+	const uint32_t renderTargetsSize = drawTask->renderTargets.size();
+	const bool isDepthOnly = ( renderTargetsSize == 0 ) && drawTask->depthStencilTarget;
 	ComPtr<ID3DBlob> vertexShader;
 	ComPtr<ID3DBlob> pixelShader;
 	ComPtr<ID3DBlob> errorMessage;
@@ -24,27 +26,32 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 	auto psPath = GetAssetFullPath(psAssetName);
 
 	HRESULT hr = D3DCompileFromFile( vsPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &errorMessage );
-	if (FAILED(hr))
+	if ( FAILED( hr ) )
 	{
 		if (errorMessage)
 		{
 			OutputDebugStringA(
 				static_cast<const char*>(errorMessage->GetBufferPointer())
 			);
+			std::cout << "ERROR: " << (char*)errorMessage->GetBufferPointer() << std::endl;
 		}
 		return;
 	}
 
-	hr = D3DCompileFromFile( psPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, &errorMessage );
-	if (FAILED(hr))
+	if ( !isDepthOnly )
 	{
-		if (errorMessage)
+		hr = D3DCompileFromFile( psPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, &errorMessage );
+		if ( FAILED( hr ) )
 		{
-			OutputDebugStringA(
-				static_cast<const char*>(errorMessage->GetBufferPointer())
-			);
+			if (errorMessage)
+			{
+				OutputDebugStringA(
+					static_cast<const char*>(errorMessage->GetBufferPointer())
+				);
+				std::cout << "ERROR: " << (char*)errorMessage->GetBufferPointer() << std::endl;
+			}
+			return;
 		}
-		return;
 	}
 
 	D3D12_SHADER_BYTECODE vsByteCode = {};
@@ -52,8 +59,11 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 	vsByteCode.BytecodeLength = vertexShader->GetBufferSize();
 
 	D3D12_SHADER_BYTECODE psByteCode = {};
-	psByteCode.pShaderBytecode = pixelShader->GetBufferPointer();
-	psByteCode.BytecodeLength = pixelShader->GetBufferSize();
+	if ( !isDepthOnly )
+	{
+		psByteCode.pShaderBytecode = pixelShader->GetBufferPointer();
+		psByteCode.BytecodeLength = pixelShader->GetBufferSize();
+	}
 
 	// Vertex shader specification data is hard-coded here, as specificed by the HelloTriangle example.
 	// When we have more complex objects, we will refactor this accordingly.
@@ -91,11 +101,11 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 	psoDesc.DepthStencilState.StencilEnable = stencilTest;
 	psoDesc.SampleMask = UINT_MAX;
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	psoDesc.NumRenderTargets = 1;
+	psoDesc.NumRenderTargets = renderTargetsSize;
 
-	for ( uint32_t i = 0; i < drawTask->renderTargets.size(); i++ )
+	for ( uint32_t i = 0; i < renderTargetsSize; i++ )
 	{
-		psoDesc.RTVFormats[i] = drawTask->renderTargets[i]->format;
+		psoDesc.RTVFormats[i] = drawTask->renderTargets[i]->rtvTexture->format;
 	}
 
 	psoDesc.SampleDesc.Count = 1;
@@ -141,6 +151,7 @@ void CreateComputePSO(
 	if (FAILED(hr)) {
 		if (errorMsg) {
 			OutputDebugStringA((char*)errorMsg->GetBufferPointer());
+			std::cout << "ERROR: " << (char*)errorMsg->GetBufferPointer() << std::endl;
 		}
 		return;
 	}

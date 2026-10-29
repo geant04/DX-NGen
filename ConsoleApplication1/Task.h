@@ -76,13 +76,17 @@ public:
 	std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> renderTargetHandles = {};
 	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilHandle;
 
-	std::vector<Gfx::Texture*> renderTargets;
+	std::vector<Gfx::RenderTarget*> renderTargets;
+
 	Gfx::Texture* depthStencilTarget;
 
 	// I don't really like this!!
 	CameraConstants drawConstants;
 
 	// CPU RESOURCES
+	int viewportWidth;
+	int viewportHeight;
+
 	Model* model;
 
 	bool clearRenderTarget = false;
@@ -94,7 +98,7 @@ public:
 	// special hack case because I want the thing to work
 	bool outputToBackBuffer = false;
 
-	bool BindRenderTargets( std::vector<Gfx::Texture*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources );
+	bool BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources );
 
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 
