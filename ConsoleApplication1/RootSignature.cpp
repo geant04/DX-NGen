@@ -1,4 +1,5 @@
 #include "RootSignature.h"
+#include <iostream>
 
 namespace Gfx 
 {
@@ -58,6 +59,7 @@ void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task )
 	}
 	if ( staticSamplersCount > 0 )
 	{
+		unsigned int samplerIndex = 0;
 		for ( Sampler* sampler : task->staticSamplers )
 		{
 			D3D12_STATIC_SAMPLER_DESC samplerDesc = {};
@@ -65,7 +67,10 @@ void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task )
 			samplerDesc.AddressU = sampler->addressMode;
 			samplerDesc.AddressV = sampler->addressMode;
 			samplerDesc.AddressW = sampler->addressMode;
+			samplerDesc.ComparisonFunc = sampler->comparisonFunc;;
 			samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+			samplerDesc.RegisterSpace = 0;
+			samplerDesc.ShaderRegister = samplerIndex++;
 			staticSamplerDescs.push_back(samplerDesc);
 		}
 	}
@@ -88,6 +93,11 @@ void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task )
 	HRESULT hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
 
 	if (FAILED(hr)) {
+		std::cout << hr << std::endl;
+		if ( error )
+		{
+			OutputDebugStringA((const char*)error->GetBufferPointer());
+		}
 		return std::perror("[ERROR CS]: Cannot serialize versioned root signature");
 	}
 

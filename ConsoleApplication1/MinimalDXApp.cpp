@@ -13,11 +13,23 @@
 bool usePathTracingMode = false;
 bool resetPathTracer = true;
 
+struct PanInfo
+{
+	int mouseX = 0;
+	int mouseY = 0;
+	int pendingMouseX = 0;
+	int pendingMouseY = 0;
+	bool isMiddleMouseDown = false;
+};
+
 bool isLeftMouseDown = false;
+int mouseWheelDelta = 0;
 int lastMouseX = 0;
 int lastMouseY = 0;
 int deltaMouseX = 0;
 int deltaMouseY = 0;
+
+PanInfo panInfo = {};
 
 LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
@@ -40,16 +52,28 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 		return 0;
 
 	case WM_MOUSEMOVE:
-		if ( isLeftMouseDown )
 		{
-			int mouseX = LOWORD( lParam );
-			int mouseY = HIWORD( lParam );
-			deltaMouseX += mouseX - lastMouseX;
-			deltaMouseY += mouseY - lastMouseY;
-			lastMouseX = mouseX;
-			lastMouseY = mouseY;
+			int mouseX = GET_X_LPARAM( lParam );
+			int mouseY = GET_Y_LPARAM( lParam );
+
+			if ( isLeftMouseDown )
+			{
+				deltaMouseX += mouseX - lastMouseX;
+				deltaMouseY += mouseY - lastMouseY;
+				lastMouseX = mouseX;
+				lastMouseY = mouseY;
+			}
+			else if ( panInfo.isMiddleMouseDown )
+			{
+				panInfo.pendingMouseX += mouseX - panInfo.mouseX;
+				panInfo.pendingMouseY += mouseY - panInfo.mouseY;
+
+				panInfo.mouseX = mouseX;
+				panInfo.mouseY = mouseY;
+			}
+
+			return 0;
 		}
-		return 0;
 
 	case WM_KEYDOWN:
 		if ( wParam == 'M' && !( lParam & ( 1 << 30 ) ) )
@@ -60,6 +84,25 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			}
 			usePathTracingMode = !usePathTracingMode;
 		}
+		return 0;
+
+	case WM_MOUSEWHEEL:
+		mouseWheelDelta += 
+			GET_WHEEL_DELTA_WPARAM( wParam );
+		return 0;
+
+	case WM_MBUTTONDOWN:
+		panInfo.isMiddleMouseDown = true;
+		panInfo.mouseX = GET_X_LPARAM( lParam );
+		panInfo.mouseY = GET_Y_LPARAM( lParam );
+		SetCapture( hWnd );
+		return 0;
+
+	case WM_MBUTTONUP:
+		panInfo.isMiddleMouseDown = false;
+		panInfo.pendingMouseX = 0;
+		panInfo.pendingMouseY = 0;
+		ReleaseCapture();
 		return 0;
 	
 	case WM_DESTROY:
@@ -228,7 +271,17 @@ void MinimalDXApp::BuildTaskList()
 	Gfx::Texture* sceneDepthTexture = Gfx::AddTexture( &resources );
 	Gfx::Buffer* cameraDataBuffer = Gfx::AddBuffer( &resources );
 	Gfx::Sampler* bilinearSamplerClamp = Gfx::AddSampler( &resources );
+	Gfx::Sampler* pcfShadowSampler = Gfx::AddSampler( &resources );
 	Gfx::RenderTarget* screenRenderTarget = Gfx::AddRenderTarget( &resources );
+
+	{
+		bilinearSamplerClamp->filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+		bilinearSamplerClamp->addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+
+		pcfShadowSampler->filterMode = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+		pcfShadowSampler->comparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		pcfShadowSampler->addressMode = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	}
 	
 	// Model* testCubeModel = Gfx::AddModel( &resources );
 	//testCubeModel = &resources.globalTestCube;
@@ -250,7 +303,7 @@ void MinimalDXApp::BuildTaskList()
 	// 2. process all geometry separately and automatically generate draw tasks from there
 	// 3. if above works, then the same logic maps for shadows
 	// This is a temporary hack because I want to say "I added shadow maps!" to my engine.
-	const unsigned int shadowMapSize = 512;
+	const unsigned int shadowMapSize = 2048;
 	Gfx::Texture* sunShadowMap = Gfx::AddTexture( &resources );
 	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D16_UNORM, 1 );
 	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R16_UNORM, 1 );
@@ -278,10 +331,6 @@ void MinimalDXApp::BuildTaskList()
 		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
 		drawScreen->readTextures.push_back( screenTexture );
 		drawScreen->staticSamplers.push_back( bilinearSamplerClamp );
-		{
-			bilinearSamplerClamp->filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-			bilinearSamplerClamp->addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-		}
 		drawScreen->clearRenderTarget = false;
 		drawScreen->depthTest = false;
 		drawScreen->outputToBackBuffer = true;
@@ -363,7 +412,8 @@ void MinimalDXApp::BuildTaskList()
 		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
 		
 		drawTestCube->model = &resources.globalTestCube;
-		drawTestCube->model->transform.Translate( { 0.0f, 0.0f, 0.0f } );
+		drawTestCube->model->transform.Scale( { 2.0f, 2.5f, 2.0f } );
+		drawTestCube->model->transform.Translate( { 0.0f, 1.5f, 0.0f } );
 		{
 			Gfx::Buffer* cubeConstantBuffer = Gfx::AddBuffer( &resources );
 			Gfx::CreateConstantBuffer( device, cubeConstantBuffer, &resources, &drawTestCube->drawConstants, 
@@ -372,6 +422,7 @@ void MinimalDXApp::BuildTaskList()
 		}
 		drawTestCube->readTextures.push_back( sunShadowMap );
 		drawTestCube->staticSamplers.push_back( bilinearSamplerClamp );
+		drawTestCube->staticSamplers.push_back( pcfShadowSampler );
 		drawTestCube->initResources.vertexShaderName = "vsGeometry.hlsl";
 		drawTestCube->initResources.pixelShaderName = "psLitGeometry.hlsl";
 		drawTestCube->clearRenderTarget = false;
@@ -399,6 +450,7 @@ void MinimalDXApp::BuildTaskList()
 		}
 		drawTestFloor->readTextures.push_back( sunShadowMap );
 		drawTestFloor->staticSamplers.push_back( bilinearSamplerClamp );
+		drawTestFloor->staticSamplers.push_back( pcfShadowSampler );
 		drawTestFloor->initResources.vertexShaderName = "vsGeometry.hlsl";
 		drawTestFloor->initResources.pixelShaderName = "psLitGeometry.hlsl";
 		drawTestFloor->clearRenderTarget = false;
@@ -475,7 +527,7 @@ void MinimalDXApp::BuildTaskList()
 		drawDebugView->outputToBackBuffer = true;
 
 		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R16_UNORM, 1 );
-		drawDebugView->readTextures.push_back( sunShadowMap ); // this should not work because I didn't make a dedicated SRV for this? we'll find out
+		drawDebugView->readTextures.push_back( sunShadowMap );
 		drawDebugView->staticSamplers.push_back( bilinearSamplerClamp );
 
 		debugRenderTarget->rtvTexture = screenTexture;
@@ -515,11 +567,12 @@ void MinimalDXApp::BuildTaskList()
 	}
 }
 
+
+// THIS FUNC IS RAN EVERY FRAME!
+// func responsible for stuff like getting mouse I/O or toggling settings and what not.
+// basically processing changes and stuff from the client
 void MinimalDXApp::ProcessGameState()
 {
-	// func responsible for stuff like getting mouse I/O or toggling settings and what not.
-	// basically processing changes and stuff from the client
-
 	{
 		// need to implement/generate camera matrix stuff here
 		// we are rebuilding the camera every frame! gosh this is horrible...
@@ -530,6 +583,15 @@ void MinimalDXApp::ProcessGameState()
 		
 		// Camera update code
 		{
+			if ( mouseWheelDelta != 0 )
+			{
+				const float wheelSteps = static_cast<float>( mouseWheelDelta ) / static_cast<float>( WHEEL_DELTA );
+				const float zoomFactor = pow( 0.85f, wheelSteps );
+
+				cameraData.orbitRadius *= zoomFactor;
+				mouseWheelDelta = 0.0f;
+			}
+
 			if ( deltaMouseX != 0 || deltaMouseY != 0 )
 			{
 				cameraData.yaw	 -= static_cast<float>( deltaMouseX ) * cameraData.sensitivity;
@@ -547,7 +609,48 @@ void MinimalDXApp::ProcessGameState()
 			float cosYaw = cosf( cameraData.yaw );
 			float sinYaw = sinf( cameraData.yaw );
 
+			const float movementSpeed = 0.1f;
+			const float panSensitivity = 0.02f;
+			
+			const XMVECTOR forward = XMVector3Normalize( XMVectorSet( -sinYaw, 0.0f, -cosYaw, 0.0f ) );
+			const XMVECTOR right = XMVector3Normalize( XMVectorSet( -cosYaw, 0.0f, sinYaw, 0.0f ) );
+			const XMVECTOR worldUp = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
+
 			XMVECTOR target = XMLoadFloat4( &cameraData.at );
+			
+			if ( GetAsyncKeyState( 'W' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( forward, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'A' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( -right, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'S' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( -forward, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'D' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( right, movementSpeed ) );
+			}
+
+			if ( panInfo.pendingMouseX != 0 || panInfo.pendingMouseY != 0 )
+			{
+				const float horizontalPan = static_cast<float>( panInfo.pendingMouseX ) * panSensitivity;
+				const float verticalPan = static_cast<float>( panInfo.pendingMouseY ) * panSensitivity;
+
+				// -right to move scene to the left
+				target = XMVectorAdd( target, XMVectorScale( -right, horizontalPan ) );
+				target = XMVectorAdd( target, XMVectorScale( worldUp, verticalPan ) );
+
+				panInfo.pendingMouseX = 0;
+				panInfo.pendingMouseY = 0;
+			}
+
+			XMStoreFloat4( &cameraData.at, target );
+
+
 			XMVECTOR offset = XMVectorSet(
 				cameraData.orbitRadius * cosPitch * sinYaw,
 				cameraData.orbitRadius * sinPitch,
