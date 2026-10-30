@@ -5,22 +5,118 @@
 #include "RenderBackend.h"
 #include "Settings.h"
 #include <iostream>
+#include <windowsx.h>
+#include "TaskSystem.h"
 
 #define SIMPLE_TEST false
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+// GLOBAL VARS
+bool usePathTracingMode = false;
+bool resetPathTracer = true;
+
+struct PanInfo
 {
-	switch(message)
+	int mouseX = 0;
+	int mouseY = 0;
+	int pendingMouseX = 0;
+	int pendingMouseY = 0;
+	bool isMiddleMouseDown = false;
+};
+
+bool isLeftMouseDown = false;
+int mouseWheelDelta = 0;
+int lastMouseX = 0;
+int lastMouseY = 0;
+int deltaMouseX = 0;
+int deltaMouseY = 0;
+
+PanInfo panInfo = {};
+
+LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
+{
+	switch ( message )
 	{
-	case WM_DESTROY: PostQuitMessage(0); return 0;
-	default: return DefWindowProc(hWnd, message, wParam, lParam);
+	case WM_LBUTTONDOWN:
+		std::cout << "isMoving"  << std::endl;
+
+		isLeftMouseDown = true;
+		lastMouseX = LOWORD( lParam );
+		lastMouseY = HIWORD( lParam );
+		SetCapture( hWnd );
+		return 0;
+
+	case WM_LBUTTONUP:
+		isLeftMouseDown = false;
+		deltaMouseX = 0;
+		deltaMouseY = 0;
+		ReleaseCapture();
+		return 0;
+
+	case WM_MOUSEMOVE:
+		{
+			int mouseX = GET_X_LPARAM( lParam );
+			int mouseY = GET_Y_LPARAM( lParam );
+
+			if ( isLeftMouseDown )
+			{
+				deltaMouseX += mouseX - lastMouseX;
+				deltaMouseY += mouseY - lastMouseY;
+				lastMouseX = mouseX;
+				lastMouseY = mouseY;
+			}
+			else if ( panInfo.isMiddleMouseDown )
+			{
+				panInfo.pendingMouseX += mouseX - panInfo.mouseX;
+				panInfo.pendingMouseY += mouseY - panInfo.mouseY;
+
+				panInfo.mouseX = mouseX;
+				panInfo.mouseY = mouseY;
+			}
+
+			return 0;
+		}
+
+	case WM_KEYDOWN:
+		if ( wParam == 'M' && !( lParam & ( 1 << 30 ) ) )
+		{
+			if ( !usePathTracingMode )
+			{
+				resetPathTracer = true;
+			}
+			usePathTracingMode = !usePathTracingMode;
+		}
+		return 0;
+
+	case WM_MOUSEWHEEL:
+		mouseWheelDelta += 
+			GET_WHEEL_DELTA_WPARAM( wParam );
+		return 0;
+
+	case WM_MBUTTONDOWN:
+		panInfo.isMiddleMouseDown = true;
+		panInfo.mouseX = GET_X_LPARAM( lParam );
+		panInfo.mouseY = GET_Y_LPARAM( lParam );
+		SetCapture( hWnd );
+		return 0;
+
+	case WM_MBUTTONUP:
+		panInfo.isMiddleMouseDown = false;
+		panInfo.pendingMouseX = 0;
+		panInfo.pendingMouseY = 0;
+		ReleaseCapture();
+		return 0;
+	
+	case WM_DESTROY:
+		PostQuitMessage( 0 );
+		return 0;
+	
+	default:
+		return DefWindowProc( hWnd, message, wParam, lParam );
 	}
 }
 
-void MinimalDXApp::CreateDisplayWindow(HINSTANCE hInstance, int nCmdShow)
+void MinimalDXApp::CreateDisplayWindow( HINSTANCE hInstance, int nCmdShow )
 {
-	// Populate the WindowProperties struct with stuff copied from GPT.
-	// Not gonna bother figuring out how the window is made. Not the priority here.
 	WNDCLASSEX wc = {};
 	wc.cbSize = sizeof(WNDCLASSEX);
 	wc.lpfnWndProc = WndProc;
@@ -128,6 +224,7 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 	{
 		Gfx::CreateGlobalDescriptorHeaps( device, resources.globalDescriptorHeap );
 		Gfx::CreateSwapChainRTVs( device, swapChain, &resources, SWAPCHAIN_COUNT );
+		resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 	}
 
 	// Might need a reminder of commandAllocator's purpose?
@@ -143,90 +240,145 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 			// TODO: Need some error handling/validation
 		}
 	}
+
+	{
+		// random stuff
+		resources.globalFullScreenTriangleMesh = &Mesh::GenerateFullScreenTriangle();
+		resources.globalTestTriangle.mesh = resources.globalFullScreenTriangleMesh;
+
+		resources.globalTestCubeMesh = &Mesh::GenerateCube( 1.0f );
+		resources.globalTestCube.mesh = resources.globalTestCubeMesh;
+
+		// set sun camera view proj matrix
+		const XMVECTOR target = XMVectorSet( 0.0f, 0.0f, 0.0f, 1.0f );
+		const float lightDistance = 20.0f;
+		const XMVECTOR eye = XMVectorSubtract( target, XMVectorScale( sunDirection, lightDistance ) );
+		const XMVECTOR up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
+		const XMMATRIX view = XMMatrixLookAtLH( eye, target, up );
+		const XMMATRIX projection = XMMatrixOrthographicLH( 24.0f, 24.0f, 1.0f, 50.0f );
+
+		shadowCameraData.viewProj = view * projection;
+	}
 }
 
 void MinimalDXApp::BuildTaskList()
 {
-	const uint32_t screenTextureMips = 1;
-	const uint32_t screenTextureSamples = 1;
-	const uint32_t screenWidth = windowProperties.mWidth;
-	const uint32_t screenHeight = windowProperties.mHeight;
-	
-	std::unique_ptr<ComputeTask> pathTraceTask = std::make_unique<ComputeTask>();
-	{
-		pathTraceTask->readWriteTextures.push_back( &screenTexture );
-		pathTraceTask->dynamicBuffers.push_back( &cameraDataBuffer );
-
-		Gfx::CreateRWTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
-		Gfx::CreateReadTexture( device, &screenTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, screenTextureMips );
-		Gfx::CreateConstantBuffer( device, &cameraDataBuffer, &resources, &cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-
-		pathTraceTask->initResources.csAssetName = "csPathTracer.hlsl";
-		pathTraceTask->initResources.entryPoint = "CSMain";
-		pathTraceTask->initResources.dispatchWidth = (windowProperties.mWidth + 7) / 8; // hardcoded (8, 8, 1) dims
-		pathTraceTask->initResources.dispatchHeight = (windowProperties.mHeight + 7) / 8;
-	}
-
-	if ( !Gfx::CreateComputeTask( this, pathTraceTask.get() ) )
-	{
-		return;
-	}
-
-	std::unique_ptr<DrawTask> drawScreen = std::make_unique<DrawTask>();
-	{
-		drawScreen->mesh = &Mesh::GenerateFullScreenTriangle();
-		drawScreen->initResources.vertexShaderName = "vsTriangle.hlsl";
-		drawScreen->initResources.pixelShaderName = "psBlit.hlsl";
-		drawScreen->readTextures.push_back( &screenTexture );
-		drawScreen->staticSamplers.push_back( &bilinearSamplerClamp );
-		{
-			bilinearSamplerClamp.filterMode = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-			bilinearSamplerClamp.addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-		}
-	}
-
-	if ( !Gfx::CreateDrawTask( this, drawScreen.get() ) )
-	{
-		return;
-	}
-
-	// Sync
-	{
-		WaitForPreviousFrame();
-	}
-
-	std::unique_ptr<BarrierTask> screenSrvToUav = std::make_unique<BarrierTask>();
-	{
-		screenSrvToUav->resource = screenTexture.resource.Get();
-		screenSrvToUav->stateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		screenSrvToUav->stateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-	}
-
-	std::unique_ptr<BarrierTask> screenUavToSrv = std::make_unique<BarrierTask>();
-	{	
-		screenUavToSrv->resource = screenTexture.resource.Get();
-		screenUavToSrv->stateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		screenUavToSrv->stateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	}
-
-	tasks.push_back( std::move( screenSrvToUav ) );
-	tasks.push_back( std::move( pathTraceTask ) );
-	tasks.push_back( std::move( screenUavToSrv ) );
-	tasks.push_back( std::move( drawScreen ) );
+	BuildTaskSystem( this );
 }
 
-void MinimalDXApp::AddTask( std::unique_ptr<Task> task )
-{
-	tasks.push_back( std::move( task ) );
-}
-
+// THIS FUNC IS RAN EVERY FRAME!
+// func responsible for stuff like getting mouse I/O or toggling settings and what not.
+// basically processing changes and stuff from the client
 void MinimalDXApp::ProcessGameState()
 {
-	// func responsible for stuff like getting mouse I/O or toggling settings and what not.
-	// basically processing changes and stuff from the client
-
 	{
-		cameraConstants.frameNumber++;
+		// need to implement/generate camera matrix stuff here
+		// we are rebuilding the camera every frame! gosh this is horrible...
+		float fovY = cameraData.fov;
+		float aspectRatio = static_cast<float>( windowProperties.mWidth ) / static_cast<float>( windowProperties.mHeight );
+		float nearZ = cameraData.nearZ;
+		float farZ = cameraData.farZ;
+		
+		// Camera update code
+		{
+			if ( mouseWheelDelta != 0 )
+			{
+				const float wheelSteps = static_cast<float>( mouseWheelDelta ) / static_cast<float>( WHEEL_DELTA );
+				const float zoomFactor = pow( 0.85f, wheelSteps );
+
+				cameraData.orbitRadius *= zoomFactor;
+				mouseWheelDelta = 0.0f;
+			}
+
+			if ( deltaMouseX != 0 || deltaMouseY != 0 )
+			{
+				cameraData.yaw	 -= static_cast<float>( deltaMouseX ) * cameraData.sensitivity;
+				cameraData.pitch += static_cast<float>( deltaMouseY ) * cameraData.sensitivity;
+
+				deltaMouseX = 0;
+				deltaMouseY = 0;
+			}
+
+			const float pitchLimit = XM_PIDIV2 - 0.05f;
+			cameraData.pitch = std::max( -pitchLimit, std::min( pitchLimit, cameraData.pitch ) );
+
+			float cosPitch = cosf( cameraData.pitch );
+			float sinPitch = sinf( cameraData.pitch );
+			float cosYaw = cosf( cameraData.yaw );
+			float sinYaw = sinf( cameraData.yaw );
+
+			const float movementSpeed = 0.1f;
+			const float panSensitivity = 0.02f;
+			
+			const XMVECTOR forward = XMVector3Normalize( XMVectorSet( -sinYaw, 0.0f, -cosYaw, 0.0f ) );
+			const XMVECTOR right = XMVector3Normalize( XMVectorSet( -cosYaw, 0.0f, sinYaw, 0.0f ) );
+			const XMVECTOR worldUp = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
+
+			XMVECTOR target = XMLoadFloat4( &cameraData.at );
+			
+			if ( GetAsyncKeyState( 'W' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( forward, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'A' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( -right, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'S' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( -forward, movementSpeed ) );
+			}
+			if ( GetAsyncKeyState( 'D' ) & 0x8000 )
+			{
+				target = XMVectorAdd( target, XMVectorScale( right, movementSpeed ) );
+			}
+
+			if ( panInfo.pendingMouseX != 0 || panInfo.pendingMouseY != 0 )
+			{
+				const float horizontalPan = static_cast<float>( panInfo.pendingMouseX ) * panSensitivity;
+				const float verticalPan = static_cast<float>( panInfo.pendingMouseY ) * panSensitivity;
+
+				// -right to move scene to the left
+				target = XMVectorAdd( target, XMVectorScale( -right, horizontalPan ) );
+				target = XMVectorAdd( target, XMVectorScale( worldUp, verticalPan ) );
+
+				panInfo.pendingMouseX = 0;
+				panInfo.pendingMouseY = 0;
+			}
+
+			XMStoreFloat4( &cameraData.at, target );
+
+
+			XMVECTOR offset = XMVectorSet(
+				cameraData.orbitRadius * cosPitch * sinYaw,
+				cameraData.orbitRadius * sinPitch,
+				cameraData.orbitRadius * cosPitch * cosYaw,
+				0.0f
+			);
+
+			XMStoreFloat4( &cameraData.eye, XMVectorAdd( target, offset ) );
+		}
+
+		cameraConstants.cameraPosition = cameraData.eye;
+
+		const XMVECTOR& eye = XMLoadFloat4( &cameraData.eye );
+		const XMVECTOR& at  = XMLoadFloat4( &cameraData.at );
+		const XMVECTOR& up  = XMLoadFloat4( &cameraData.up );
+		XMMATRIX view = XMMatrixLookAtLH( eye, at, up );
+		XMMATRIX projection = XMMatrixPerspectiveFovLH( fovY, aspectRatio, nearZ, farZ );
+		cameraData.viewProj = view * projection;
+
+		cameraConstants.resetPathTracer = resetPathTracer;
+
+		if ( resetPathTracer )
+		{
+			resetPathTracer = false;
+			cameraConstants.frameNumber = 1;
+		}
+		else
+		{
+			cameraConstants.frameNumber++;
+		}
 	}
 }
 
@@ -234,7 +386,7 @@ void MinimalDXApp::ProcessGameState()
 void MinimalDXApp::Render()
 {
     // Get the current back buffer handle
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = resources.GetCpuHandle( resources.swapChainTextures[frameIndex].rtv, Gfx::RTV_HEAP );
+    resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 
 	// Reset command allocator & list
 	commandAllocator->Reset();
@@ -265,13 +417,60 @@ void MinimalDXApp::Render()
 	);
     commandList->ResourceBarrier(1, &barrier);
 
-    // Clear the render target
-    FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+	if ( usePathTracingMode )
+	{
+		for ( auto& task : pathTracingTasks )
+		{	
+			task->execute( commandList, commandAllocator, &resources );
+		}
+	}
+	else
+	{
+		for ( auto& task : shadowTasks )
+		{	
+			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
+			{
+				if ( !drawTask->dynamicBuffers.empty() )
+				{
+					// update model matrix hack
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					*cb = cameraConstants;	// camera position, frame number, etc.
+					
+					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
+					const XMMATRIX lightModelViewProj = model * lightViewProj;
+					const XMMATRIX lightViewProjInverse = ( XMMatrixInverse( nullptr, lightViewProj ) );
 
-	for ( auto& task : tasks )
-	{	
-		task->execute( commandList, commandAllocator, &rtvHandle );
+					XMStoreFloat4x4( &cb->modelViewProj, lightModelViewProj );
+					XMStoreFloat4x4( &cb->viewProjInverse,  lightViewProjInverse );
+				}
+			}
+			task->execute( commandList, commandAllocator, &resources );
+		}
+		for ( auto& task : tasks )
+		{	
+			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
+			{
+				if ( !drawTask->dynamicBuffers.empty() )
+				{
+					// update model matrix hack
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					*cb = cameraConstants;	// camera position, frame number, etc.
+					
+					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					const XMMATRIX& viewProj = cameraData.viewProj;
+					const XMMATRIX modelViewProj = model * viewProj;
+					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;
+					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
+
+					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
+					XMStoreFloat4x4( &cb->viewProjInverse, viewProjInverse );
+					XMStoreFloat4x4( &cb->lightViewProj, lightModelViewProj );
+					XMStoreFloat3( &cb->sunDirection, sunDirection );
+				}
+			}
+			task->execute( commandList, commandAllocator, &resources );
+		}
 	}
 	
     // Transition back buffer to present

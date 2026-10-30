@@ -104,6 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -136,23 +137,33 @@
     <ClCompile Include="RenderBackend.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="RootSignature.cpp" />
+    <ClCompile Include="Scene.cpp" />
     <ClCompile Include="Task.cpp" />
+    <ClCompile Include="TaskSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Camera.h" />
+    <ClInclude Include="CustomOptional.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="Common.h" />
+    <ClInclude Include="ImageLoader.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="MinimalDXApp.h" />
+    <ClInclude Include="Model.h" />
     <ClInclude Include="Pipeline.h" />
     <ClInclude Include="RenderBackend.h" />
     <ClInclude Include="ResourceHandles.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="RootSignature.h" />
+    <ClInclude Include="Scene.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="Task.h" />
+    <ClInclude Include="TaskSystem.h" />
     <ClInclude Include="WinInclude.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\README.md" />
+    <None Include="..\shaders\CommonBuffers.hlsli" />
     <None Include="..\shaders\Common.hlsli" />
     <None Include="..\shaders\Intersections.hlsl" />
     <None Include="..\shaders\psTriangle.hlsl">
@@ -167,6 +178,29 @@
     <None Include="..\shaders\psBlit.hlsl">
       <FileType>Document</FileType>
     </None>
+    <None Include="..\shaders\psLitGeometry.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\vsGeometry.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\sky.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\psDebug.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\csFxaa.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\shaders\vsLitGeometry.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

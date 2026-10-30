@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "Mesh.h"
+#include "Camera.h"
 #include "ResourceManager.h"
 
 struct PreparedDescriptorTable
@@ -36,7 +37,7 @@ public:
 	virtual void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 
 		ComPtr<ID3D12CommandAllocator> commandAllocator,
-		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
+		Gfx::Resources *resources
 	) = 0;
 
 	ComPtr<ID3D12RootSignature> rootSignature;
@@ -65,19 +66,44 @@ struct InitResources
 };
 
 public:
+	// We're going to move this vertexBuffer stuff somewhere else so that we can process geometry draws a lot more easily
 	// GPU RESOURCES
 	ComPtr<ID3D12Resource> vertexBuffer;
 	ComPtr<ID3D12Resource> vertexBufferUpload;
-
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 
+	// GPU/CPU RESOURCES
+	std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> renderTargetHandles = {};
+	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilHandle;
+
+	std::vector<Gfx::RenderTarget*> renderTargets;
+
+	Gfx::Texture* depthStencilTarget;
+
+	// I don't really like this!!
+	CameraConstants drawConstants;
+
 	// CPU RESOURCES
-	Mesh* mesh;
+	int viewportWidth;
+	int viewportHeight;
+
+	Model* model;
+
+	bool clearRenderTarget = false;
+	bool clearDepth = false;
+	bool clearStencil = false;
+	bool depthTest = false;
+	bool stencilTest = false;
+
+	// special hack case because I want the thing to work
+	bool outputToBackBuffer = false;
+
+	bool BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources );
 
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 
 		ComPtr<ID3D12CommandAllocator> commandAllocator,
-		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle
+		Gfx::Resources *resources
 	) override;
 
 	InitResources initResources;
@@ -101,7 +127,7 @@ public:
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 
 		ComPtr<ID3D12CommandAllocator> commandAllocator,
-		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle = nullptr
+		Gfx::Resources *resources
 	) override;
 
 	virtual TaskType getType() const override { return Compute; }
@@ -117,6 +143,6 @@ public:
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 
 		ComPtr<ID3D12CommandAllocator> commandAllocator = nullptr,
-		D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandle = nullptr
+		Gfx::Resources *resources = nullptr
 	) override;
 };

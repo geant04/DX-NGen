@@ -4,6 +4,7 @@
 #include "Task.h"
 #include "Settings.h"
 #include "ResourceManager.h"
+#include "Camera.h"
 
 struct WindowProperties
 {
@@ -32,7 +33,6 @@ struct MinimalDXApp
 	void ProcessGameState();
 	void Render();
 	void Run();
-	void AddTask(std::unique_ptr<Task> task);
 
 	// SOON TO BE DEPRECATED FRAMECOUNT NUMBER!
 	static const uint32_t frameCount = 2;
@@ -62,7 +62,9 @@ struct MinimalDXApp
 	UINT64 fenceValue = 0;
 
 	// Miscellanious things
-	std::vector<std::unique_ptr<Task>> tasks;
+	std::vector<std::shared_ptr<Task>> tasks;
+	std::vector<std::shared_ptr<Task>> shadowTasks;
+	std::vector<std::shared_ptr<Task>> pathTracingTasks;
 
 	uint32_t frameIndex;
 	uint32_t rtvDescriptorSize;
@@ -71,8 +73,14 @@ struct MinimalDXApp
 
 	// PERSISTENT RESOURCES
 	CameraConstants cameraConstants = {};
-	Gfx::Texture screenTexture;
-	Gfx::Sampler bilinearSamplerClamp;
-	Gfx::Buffer cameraDataBuffer;
+	Camera cameraData = {};
+
+	// Assume there's just one shadow camera for now
+	Camera shadowCameraData = {};
+	XMVECTOR sunDirection = XMVector3Normalize( XMVectorSet( -0.5f, -1.0f, -0.5f, 0.0f ) );
+
+	//Gfx::Texture screenTexture;
+	//Gfx::Sampler bilinearSamplerClamp;
+	//Gfx::Buffer cameraDataBuffer;
 };
 
