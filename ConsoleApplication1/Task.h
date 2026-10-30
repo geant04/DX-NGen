@@ -66,10 +66,10 @@ struct InitResources
 };
 
 public:
+	// We're going to move this vertexBuffer stuff somewhere else so that we can process geometry draws a lot more easily
 	// GPU RESOURCES
 	ComPtr<ID3D12Resource> vertexBuffer;
 	ComPtr<ID3D12Resource> vertexBufferUpload;
-
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 
 	// GPU/CPU RESOURCES

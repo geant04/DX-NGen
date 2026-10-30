@@ -137,7 +137,9 @@
     <ClCompile Include="RenderBackend.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="RootSignature.cpp" />
+    <ClCompile Include="Scene.cpp" />
     <ClCompile Include="Task.cpp" />
+    <ClCompile Include="TaskSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Camera.h" />
@@ -153,8 +155,10 @@
     <ClInclude Include="ResourceHandles.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="RootSignature.h" />
+    <ClInclude Include="Scene.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="Task.h" />
+    <ClInclude Include="TaskSystem.h" />
     <ClInclude Include="WinInclude.h" />
   </ItemGroup>
   <ItemGroup>
@@ -184,19 +188,12 @@
     </None>
     <None Include="..\shaders\psDebug.hlsl">
       <FileType>Document</FileType>
+    </None>    
+    <None Include="..\shaders\csFxaa.hlsl">
+      <FileType>Document</FileType>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="..\shaders\csFxaa.hlsl">
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
-      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
-    </FxCompile>
     <FxCompile Include="..\shaders\vsLitGeometry.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>

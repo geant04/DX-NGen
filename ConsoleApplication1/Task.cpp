@@ -37,7 +37,7 @@ void DrawTask::execute(
         }
     }
 
-	if ( renderTargetHandles.empty() && !depthStencilTarget )
+	if ( ( renderTargetHandles.empty() && !outputToBackBuffer ) && !depthStencilTarget )
     {
 		std::cout << "ERROR: empty render and depth targets!" << std::endl;
 		return;
@@ -136,10 +136,11 @@ void DrawTask::execute(
 
 bool DrawTask::BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources )
 {
-	if ( renderTargets.empty() && !depthStencilTarget )
+	bool isEmptyRenderTargets = renderTargets.empty() && !outputToBackBuffer;
+	if ( isEmptyRenderTargets && !depthStencilTarget )
 	{
 		// Need at least one render/depth target!
-		std::cout << "ERROR: no render target or depth target!" << std::endl;
+		std::cout << "ERROR: no render target or depth target! and NOT output to swapchain" << std::endl;
 		return false;
 	}
 

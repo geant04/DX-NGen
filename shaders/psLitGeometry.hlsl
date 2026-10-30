@@ -33,6 +33,7 @@ float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
 	float shadow = 0.0f;
 
 #if TEST_SIMPLE_BOX_TAP
+	if ( lightUV.x >= 0.0f && lightUV.x <= 1.0f && lightUV.y >= 0.0f && lightUV.y <= 1.0f )
 	{
 		const uint samples = 8;
 		const float2 offsets[samples] = 
@@ -81,7 +82,7 @@ float4 PSMain(PSInput input) : SV_TARGET
 {	
 	float shadow = GetShadow( input.lightPosition, input.position.xy );
 	
-	float3 outColor = 1.0f;
+	float3 outColor = 0.85f;
 	float3 normal = normalize( input.normal.rgb );
 	float3 sunDir = normalize( data.sunDirection.rgb );
 	

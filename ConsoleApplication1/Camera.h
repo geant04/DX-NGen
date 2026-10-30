@@ -10,7 +10,9 @@ struct CameraConstants {
 	XMFLOAT3 sunDirection;
 	uint32_t frameNumber;
 	bool resetPathTracer;
-	uint32_t padding0[3];
+	float invScreenWidth;
+	float invScreenHeight;
+	uint32_t padding0[1];
 };
 
 

@@ -10,6 +10,8 @@ struct CameraConstantsData
 	float3 sunDirection;
 	uint frameNumber;
 	bool resetPathTracer;
+	float invScreenWidth;
+	float invScreenHeight;
 };
 
 #endif // #ifndef __COMMON_BUFFERS_HLSLI__
