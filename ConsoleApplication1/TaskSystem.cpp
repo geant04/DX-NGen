@@ -8,7 +8,8 @@
 #include <windowsx.h>
 
 static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* inOutTexture, 
-	Gfx::Buffer* cameraDataBuffer, unsigned int screenWidth, unsigned int screenHeight )
+	Gfx::Sampler* bilinearSamplerClamp, Gfx::RenderTarget* screenRenderTarget, Gfx::Buffer* cameraDataBuffer, 
+	unsigned int screenWidth, unsigned int screenHeight )
 {
 	std::shared_ptr<ComputeTask> pathTraceTask = std::make_shared<ComputeTask>();
 	{
@@ -29,7 +30,8 @@ static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* 
 	// Temp disabling these tasks and only pushing drawScreen, which now does "draw cube" actually
 	app->pathTracingTasks.push_back( pathTraceTask );
 	app->pathTracingTasks.push_back( UavToSrv(  inOutTexture ) );
-	// app->pathTracingTasks.push_back( drawScreen );
+	app->pathTracingTasks.push_back( drawToScreen( app, inOutTexture, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
+	app->pathTracingTasks.push_back( SrvToUav(  inOutTexture ) );
 }
 
 static void BuildTaskSystemInternal( MinimalDXApp* app )
@@ -56,6 +58,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	Gfx::Sampler* bilinearSamplerClamp = Gfx::AddSampler( &resources );
 	Gfx::Sampler* pcfShadowSampler = Gfx::AddSampler( &resources );
 	Gfx::RenderTarget* screenRenderTarget = Gfx::AddRenderTarget( &resources );
+
 	{
 		// BindRenderTargets should be able to handle outputToBackbuffer, so this stuff below should be unnecessary
 		screenRenderTarget->rtvTexture = screenTexture;
@@ -85,6 +88,13 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	Gfx::CreateReadTexture( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
 	Gfx::CreateConstantBuffer( device, cameraDataBuffer, &resources, &app->cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 	Gfx::CreateRTV( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
+
+	BuildPathtracerTaskSystemInternal( app, 
+		screenTexture, 
+		bilinearSamplerClamp, 
+		screenRenderTarget, 
+		cameraDataBuffer, 
+		screenWidth, screenHeight );
 
 	// Shadow draw tasks... Need to refactor this in such a way that:
 	// 1. let every object have a shadowCaster flag or something
@@ -154,7 +164,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	std::shared_ptr<DrawTask> drawTestFloor = std::make_shared<DrawTask>();
 	{
 		drawTestFloor->model = testFloorModel;
-		drawTestFloor->model->transform.Scale( { 100.0f, 0.5f, 100.0f } );
+		drawTestFloor->model->transform.Scale( { 20.0f, 0.5f, 20.0f } );
 		drawTestFloor->model->transform.Translate( { 0.0f, -0.75f, 0.0f } );
 		{
 			Gfx::Buffer* floorConstantBuffer = Gfx::AddBuffer( &resources );
@@ -270,9 +280,11 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 
 		fxaa->initResources.csAssetName = "csFxaa.hlsl";
 		fxaa->initResources.entryPoint = "main";
-		fxaa->initResources.dispatchWidth = ( screenWidth + 7) / 8; // hardcoded (8, 8, 1) dims
+		fxaa->initResources.dispatchWidth = ( screenWidth + 7) / 8;
 		fxaa->initResources.dispatchHeight = ( screenHeight + 7) / 8;
 	}
+
+
 
 	if ( !Gfx::CreateComputeTask( app, fxaa.get() ) )
 	{

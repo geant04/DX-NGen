@@ -162,6 +162,7 @@
     <ClInclude Include="WinInclude.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\README.md" />
     <None Include="..\shaders\CommonBuffers.hlsli" />
     <None Include="..\shaders\Common.hlsli" />
     <None Include="..\shaders\Intersections.hlsl" />
@@ -188,7 +189,7 @@
     </None>
     <None Include="..\shaders\psDebug.hlsl">
       <FileType>Document</FileType>
-    </None>    
+    </None>
     <None Include="..\shaders\csFxaa.hlsl">
       <FileType>Document</FileType>
     </None>

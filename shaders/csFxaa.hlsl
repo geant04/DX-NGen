@@ -8,6 +8,8 @@ SamplerState texSampler : register(s0);
 #define CS_FXAA_HEIGHT 8
 #define EDGE_THRESHOLD_MIN 0.0312f
 #define EDGE_THRESHOLD_MAX 0.125f
+#define FXAA_EDGE_REACH_ITERATIONS 12
+#define SUBPIXEL_QUALITY 0.75f
 
 cbuffer CameraConstants : register(b0)
 {
@@ -111,7 +113,7 @@ void FxaaInternal( int2 dtid )
 	
 	if ( !reachedBoth )
 	{
-		const uint ITERATIONS = 12;
+		const uint ITERATIONS = FXAA_EDGE_REACH_ITERATIONS;
 		for ( uint i = 2; i < ITERATIONS; i++ )
 		{
 			if ( !reached1 )
@@ -157,7 +159,6 @@ void FxaaInternal( int2 dtid )
 	bool correctVariation = ((isDirection1 ? lumaEnd1 : lumaEnd2) < 0.0) != isLumaCenterSmaller;
 	float finalOffset = correctVariation ? pixelOffset : 0.0;
 	
-	const float SUBPIXEL_QUALITY = 0.75f;
 	float lumaAverage = (1.0/12.0) * (2.0 * (upDown + leftRight) + leftCorners + rightCorners);
 
 	float subPixelOffset1 = clamp( abs( lumaAverage - centerLuma ) / lumaRange, 0.0, 1.0 );
@@ -180,5 +181,6 @@ void FxaaInternal( int2 dtid )
 [numthreads( CS_FXAA_WIDTH, CS_FXAA_HEIGHT, 1 )]
 void main( uint3 dtid : SV_DispatchThreadID )
 {
+	// Don't interrogate me on how this works just yet...
 	FxaaInternal( dtid.xy );
 }
