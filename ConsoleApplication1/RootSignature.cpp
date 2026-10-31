@@ -27,16 +27,26 @@ void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task )
 	int readTexturesCount = task->readTextures.size();
 	int readWriteTexturesCount = task->readWriteTextures.size();
 	int dynamicBuffersCount = task->dynamicBuffers.size();
+	int buffersCount = task->buffers.size();
 	int staticSamplersCount = task->staticSamplers.size();
 
 	if ( readTexturesCount > 0 )
 	{
 		// t0
 		descriptorRanges.push_back({});
-		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readTexturesCount, 0, 0);
+		descriptorRanges[descriptorRangeCount].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readTexturesCount, 0, 0 );
 
 		rootParameters.push_back({});
 		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+	if ( buffersCount > 0 )
+	{
+		// t0, space1
+		descriptorRanges.push_back( {} );
+		descriptorRanges[descriptorRangeCount].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, buffersCount, 0, 1 );
+
+		rootParameters.push_back( {} );
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable( 1, &descriptorRanges[descriptorRangeCount++] );
 	}
 	if ( readWriteTexturesCount > 0 )
 	{

@@ -5,21 +5,6 @@
 
 namespace Gfx
 {
-	
-void createRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
-	ComPtr<ID3D12RootSignature> &outRootSignature
-);
-
-void createPathTracingRootSignature(
-	ComPtr<ID3D12Device> &mDevice,
-	ComPtr<ID3D12RootSignature> &outRootSignature
-);
-
-void createBlitRootSignature(
-	const ComPtr<ID3D12Device> &mDevice,
-	ComPtr<ID3D12RootSignature> &outRootSignature
-);
 
 void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task );
 

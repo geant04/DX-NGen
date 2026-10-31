@@ -135,6 +135,25 @@ namespace Gfx
 		return true;
 	}
 
+	bool AllocateSRVBuffer( ComPtr<ID3D12Device> device, DescriptorHeap* shaderResourceHeap, Buffer* buffer )
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.NumElements = buffer->numElements;
+		srvDesc.Buffer.StructureByteStride = buffer->structuredByteStride;
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+		device->CreateShaderResourceView( buffer->resource.Get(), &srvDesc, shaderResourceHeap->GetCpuHandle() );
+
+		buffer->srv.index = shaderResourceHeap->handleIndex;
+		shaderResourceHeap->handleIndex++;
+
+		return true;
+	}
+
 	void CreateSwapChainRTVs( ComPtr<ID3D12Device> device, ComPtr<IDXGISwapChain4> swapChain, Resources* resources, uint32_t frameCount )
 	{
 		DescriptorHeap* rtvDescriptorHeap = &resources->globalDescriptorHeap.rtvGlobalHeap;
@@ -322,6 +341,16 @@ namespace Gfx
 		return AllocateConstantBufferView( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
 	}
 
+	bool CreateSRVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources )
+	{
+		if ( buffer == nullptr )
+		{
+			return false;
+		}
+
+		return AllocateSRVBuffer( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
+	}
+
 	bool CreateRenderTargetFromTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources )
 	{
 		if ( texture == nullptr )
@@ -401,5 +430,10 @@ namespace Gfx
 	Model* AddModel( Resources* resources )
 	{
 		return &resources->models[resources->modelCount++];
+	}
+
+	RenderableObject* AddRenderableObject( Resources* resources )
+	{
+		return &resources->renderableObjects.buffer[resources->renderableObjects.count++];
 	}
 }

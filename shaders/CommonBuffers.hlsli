@@ -14,4 +14,12 @@ struct CameraConstantsData
 	float invScreenHeight;
 };
 
+struct TransformData
+{
+	float4x4 model;
+	float4x4 rotate;
+	float4x4 scale;
+	float4x4 translate;
+};
+
 #endif // #ifndef __COMMON_BUFFERS_HLSLI__

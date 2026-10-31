@@ -227,6 +227,19 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 		resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 	}
 
+	{
+		device->CreateCommandAllocator( D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS( &uploadCommandAllocator ) );
+		device->CreateCommandList(
+			0, 
+			D3D12_COMMAND_LIST_TYPE_DIRECT, 
+			uploadCommandAllocator.Get(), 
+			nullptr,
+			IID_PPV_ARGS( &uploadCommandList )
+		);
+		uploadCommandList->Close();
+		device->CreateFence( 0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS( &uploadFence ) );
+	}
+
 	// Might need a reminder of commandAllocator's purpose?
 	device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
 
@@ -251,13 +264,26 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 
 		// set sun camera view proj matrix
 		const XMVECTOR target = XMVectorSet( 0.0f, 0.0f, 0.0f, 1.0f );
-		const float lightDistance = 20.0f;
+		const float lightDistance = 60.0f;
 		const XMVECTOR eye = XMVectorSubtract( target, XMVectorScale( sunDirection, lightDistance ) );
 		const XMVECTOR up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 		const XMMATRIX view = XMMatrixLookAtLH( eye, target, up );
-		const XMMATRIX projection = XMMatrixOrthographicLH( 24.0f, 24.0f, 1.0f, 50.0f );
+
+		const float shadowWorldWidth = 80.0f;
+		const float shadowWorldHeight = 80.0f;
+		const float shadowNearPlane = 0.1f;
+		const float shadowFarPlane = 150.0f;
+
+		const XMMATRIX projection = XMMatrixOrthographicLH(
+			shadowWorldWidth,
+			shadowWorldHeight,
+			shadowNearPlane,
+			shadowFarPlane
+		);
 
 		shadowCameraData.viewProj = view * projection;
+
+		PrepareScene( this );
 	}
 }
 
@@ -436,7 +462,9 @@ void MinimalDXApp::Render()
 					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
-					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					XMMATRIX model = drawTask->pass ? XMMatrixIdentity() 
+													: XMLoadFloat4x4( &drawTask->model->transform.model );
+
 					const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
 					const XMMATRIX lightModelViewProj = model * lightViewProj;
 					const XMMATRIX lightViewProjInverse = ( XMMatrixInverse( nullptr, lightViewProj ) );
@@ -457,7 +485,10 @@ void MinimalDXApp::Render()
 					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
-					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					
+					XMMATRIX model = drawTask->pass ? XMMatrixIdentity() 
+													: XMLoadFloat4x4( &drawTask->model->transform.model );
+
 					const XMMATRIX& viewProj = cameraData.viewProj;
 					const XMMATRIX modelViewProj = model * viewProj;
 					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;

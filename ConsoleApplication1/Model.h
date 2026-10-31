@@ -62,9 +62,4 @@ struct Model
 	Mesh* mesh;
 };
 
-struct Scene
-{
-	std::vector<Model> models;
-};
-
 void LoadModel( const char* filePath, Model* model );

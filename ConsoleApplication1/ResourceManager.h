@@ -4,6 +4,7 @@
 #include "ResourceHandles.h"
 #include "Mesh.h"
 #include "Model.h"
+#include "Scene.h"
 #include <vector>
 
 #define SWAPCHAIN_COUNT 2
@@ -87,6 +88,9 @@ namespace Gfx
 		UINT sizeInBytes;
 		UINT cpuDataSize;
 
+		UINT numElements;
+		UINT structuredByteStride;
+
 		UINT8* mappedBufferData;
 		void* cpuBufferData;
 
@@ -100,6 +104,13 @@ namespace Gfx
 		D3D12_FILTER filterMode;
 		D3D12_TEXTURE_ADDRESS_MODE addressMode;
 		D3D12_COMPARISON_FUNC comparisonFunc = D3D12_COMPARISON_FUNC_NONE;
+	};
+
+	template<typename T, int size>
+	struct ResourceBuffer
+	{
+		T buffer[size];
+		int count = 0;
 	};
 
 	struct Resources
@@ -163,8 +174,10 @@ namespace Gfx
 		Texture textures[100];
 		Buffer buffers[100];
 		Sampler samplers[100];
+		// RenderableObject renderableObjects[100];
 		Model models[10];
 		Mesh meshes[10];
+		ResourceBuffer<RenderableObject, 100> renderableObjects;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;
@@ -206,6 +219,8 @@ namespace Gfx
 
 	bool CreateConstantBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources, void* data, const UINT sizeInBytes, const UINT cpuDataSize );
 
+	bool CreateSRVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources );
+
 	bool CreateDepthTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
 
 	bool CreateStencilTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
@@ -218,4 +233,12 @@ namespace Gfx
 	Mesh* AddMesh( Resources* resources );
 	Model* AddModel( Resources* resources );
 	RenderTarget* AddRenderTarget( Resources* resources );
+	// RenderableObject* AddRenderableObject( Resources* resources );
+
+	template<typename T, int size>
+	T* AddToResourceBuffer( ResourceBuffer<T, size>* resourceBuffer )
+	{
+		return &resourceBuffer->buffer[resourceBuffer->count++];
+	}
+
 } // namespace ResourceManager

@@ -45,6 +45,12 @@
     <ClCompile Include="RenderBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Scene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TaskSystem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="WinInclude.h">
@@ -95,6 +101,12 @@
     <ClInclude Include="CustomOptional.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskSystem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\Common.hlsli">
@@ -118,13 +130,16 @@
     <None Include="..\shaders\CommonBuffers.hlsli">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="..\shaders\litGeometry.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="..\shaders\vsGeometry.hlsl">
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\sky.hlsl" />
     <None Include="..\shaders\psDebug.hlsl" />
+    <None Include="..\README.md" />
+    <None Include="..\shaders\psLitGeometry.hlsl" />
+    <None Include="..\shaders\csFxaa.hlsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\shaders\vsIndirectGeometry.hlsl" />
   </ItemGroup>
 </Project>

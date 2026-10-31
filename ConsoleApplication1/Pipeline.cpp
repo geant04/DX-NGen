@@ -25,7 +25,7 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 	auto vsPath = GetAssetFullPath(vsAssetName);
 	auto psPath = GetAssetFullPath(psAssetName);
 
-	HRESULT hr = D3DCompileFromFile( vsPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, &errorMessage );
+	HRESULT hr = D3DCompileFromFile( vsPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_1", compileFlags, 0, &vertexShader, &errorMessage );
 	if ( FAILED( hr ) )
 	{
 		if (errorMessage)
@@ -40,7 +40,7 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 
 	if ( !isDepthOnly )
 	{
-		hr = D3DCompileFromFile( psPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, &errorMessage );
+		hr = D3DCompileFromFile( psPath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_1", compileFlags, 0, &pixelShader, &errorMessage );
 		if ( FAILED( hr ) )
 		{
 			if (errorMessage)
@@ -141,7 +141,7 @@ void CreateComputePSO(
 		nullptr, 
 		D3D_COMPILE_STANDARD_FILE_INCLUDE, 
 		entryPoint, 
-		"cs_5_0", 
+		"cs_5_1", 
 		compileFlags, 
 		0, 
 		&csShader, 

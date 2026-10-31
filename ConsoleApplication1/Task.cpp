@@ -21,19 +21,19 @@ void DrawTask::execute(
         int bindingSlot = 0;
         if ( bindings.readTextures.descriptorCount > 0 )
         {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
+             commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.readTextures.gpuHandle );
         }
         if ( bindings.readWriteTextures.descriptorCount > 0 )
         {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
+             commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.readWriteTextures.gpuHandle );
         }
         if ( bindings.buffers.descriptorCount > 0 )
         {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.buffers.gpuHandle);
+             commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.buffers.gpuHandle );
         }
         if ( bindings.dynamicBuffers.descriptorCount > 0 )
         {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.dynamicBuffers.gpuHandle);
+             commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.dynamicBuffers.gpuHandle );
         }
     }
 
@@ -128,10 +128,26 @@ void DrawTask::execute(
 
 	commandList->OMSetRenderTargets( numRenderTargets, rtvHandlePtr, FALSE, depthStencilHandlePtr );
 
-	// Bind vertex buffer and draw
-	commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
-	commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
-	commandList->DrawInstanced( model->mesh->vertexCount, 1, 0, 0 );
+	if ( pass )
+	{
+		commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+		commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
+
+		commandList->ExecuteIndirect( 
+			pass->commandSignature.Get(),
+			pass->batchCount,
+			pass->indirectCommandBuffer.Get(), 
+			0, 
+			nullptr,
+			0 );
+	}
+	else
+	{
+		// Bind vertex buffer and draw
+		commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+		commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
+		commandList->DrawInstanced( model->mesh->vertexCount, 1, 0, 0 );
+	}
 }
 
 bool DrawTask::BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources )

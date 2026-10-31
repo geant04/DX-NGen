@@ -88,6 +88,10 @@ public:
 	int viewportHeight;
 
 	Model* model;
+	RenderableObject* object;
+	
+	// Some random indirect thing slapped in
+	Pass* pass;
 
 	bool clearRenderTarget = false;
 	bool clearDepth = false;
