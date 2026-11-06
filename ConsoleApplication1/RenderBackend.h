@@ -92,4 +92,14 @@ namespace Gfx
 		task->stateAfter = stateAfter;
 		return task;
 	};
+
+	inline std::shared_ptr<BarrierTask> CreateUavBarrierTask(
+		ComPtr<ID3D12Resource> resource
+	)
+	{
+		std::shared_ptr<BarrierTask> task = std::make_shared<BarrierTask>();
+		task->resource = resource.Get();
+		task->type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+		return task;
+	};
 }

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <windowsx.h>
 #include "TaskSystem.h"
+#include <chrono>
 
 #define SIMPLE_TEST false
 
@@ -269,8 +270,8 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 		const XMVECTOR up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 		const XMMATRIX view = XMMatrixLookAtLH( eye, target, up );
 
-		const float shadowWorldWidth = 80.0f;
-		const float shadowWorldHeight = 80.0f;
+		const float shadowWorldWidth = 200.0f;
+		const float shadowWorldHeight = 200.0f;
 		const float shadowNearPlane = 0.1f;
 		const float shadowFarPlane = 150.0f;
 

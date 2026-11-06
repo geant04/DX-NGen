@@ -213,11 +213,24 @@ void BarrierTask::execute(
 )
 {
 	// Barrier transition from PS to UA
-	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		resource,
-		stateBefore,
-		stateAfter
-	);
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = type;
+
+	if ( type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION )
+	{
+		if ( type == D3D12_RESOURCE_BARRIER_TYPE_UAV )
+		{
+			barrier.UAV.pResource = resource;
+		}
+	}
+	else
+	{
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			resource,
+			stateBefore,
+			stateAfter
+		);
+	}
 
 	// std::cout << "Transition: " << resource << std::endl;
 	commandList->ResourceBarrier(1, &barrier);

@@ -10,9 +10,10 @@ cbuffer CameraConstants : register(b0)
 	CameraConstantsData data;
 }
 
-#define CS_CULL_WIDTH 8
+#define CS_CULL_WIDTH 64
 
-bool IsInFrustum( in float4x4 viewProj, in TransformData transform )
+
+bool IsInFrustum( in float4x4 viewProj, in TransformData transform, out uint isLimitedCulled )
 {
 	// The cube is centered on its pivot, so the local center is the origin.
 	float3 center = mul( transform.model, float4( 0.0f, 0.0f, 0.0f, 1.0f ) ).xyz;
@@ -25,10 +26,13 @@ bool IsInFrustum( in float4x4 viewProj, in TransformData transform )
 
 	bool depthCheck = ( 0 < z && z < w );
 	
-	float wp = w * 0.60f;
-	bool xCheck = ( -wp < x && x < wp );
-	bool yCheck = ( -wp < y && y < wp );
+	float wp = w * 1.0f;
+	bool xCheck = ( -w < x && x < w );
+	bool yCheck = ( -w < y && y < w );
+	bool xLimitCheck = ( -wp < x && x < wp );
+	bool yLimitCheck = ( -wp < y && y < wp );
 	
+	isLimitedCulled = ( xLimitCheck && yLimitCheck && depthCheck ) ? 1u : 0u;
 	return xCheck && yCheck && depthCheck;
 }
 
@@ -45,13 +49,20 @@ void main( uint3 dtid : SV_DispatchThreadID )
 	
 	TransformData transform = transforms[transformId];
 	float4x4 viewProj = ( data.modelViewProj );
+	uint isLimitCulled = 0;
 	
-	if ( IsInFrustum( viewProj, transform ) )
+	if ( IsInFrustum( viewProj, transform, isLimitCulled ) )
 	{
 		uint batchId = transformBatchIds[transformId];
 		uint writeIndex;
 		
 		InterlockedAdd( indirectDrawArgs[batchId].instanceCount, 1, writeIndex );
-		transformIndexOffsets[indirectDrawArgs[batchId].startInstanceLocation + writeIndex] = transformId;
+		
+		// I'll just like bit flip the most significant bit 
+		// as a flag depending on the isLimitCulled thing, and then
+		// in the vert shader, acquire index by (index & 0x0FFFFFF) or something
+		uint index = transformId;
+		index |= (isLimitCulled << 31);
+		transformIndexOffsets[indirectDrawArgs[batchId].startInstanceLocation + writeIndex] = (int) index;
 	}
 }

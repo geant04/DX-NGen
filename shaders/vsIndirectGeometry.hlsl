@@ -24,15 +24,21 @@ struct VSOutput
 	float4 lightPosition : COLOR0;
 	float4 normal : NORMAL;
 	float2 uv : TEXCOORD;
+	nointerpolation uint limitCulled : TEXCOORD1;
 };
 
 VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 {
 	VSOutput output;
 	
+	bool isLimitCulled = false;
 	int indexOffset = instanceId;
 #if !SHADOW_PASS
-	indexOffset = transformIndexOffsets[instanceId];
+	uint packed = (uint) transformIndexOffsets[instanceId];
+	isLimitCulled = ( packed >> 31 ) != 0;
+	indexOffset = packed & 0x7FFFFFFF;
+	
+
 #endif
 	TransformData transform = transforms[indexOffset];
 	
@@ -44,6 +50,7 @@ VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 	output.normal = input.normal;
 	output.uv = input.uv;
 	output.lightPosition = mul( data.lightViewProj, worldPosition );
+	output.limitCulled = isLimitCulled ? 1u : 0u;
 	
 	return output;
 }

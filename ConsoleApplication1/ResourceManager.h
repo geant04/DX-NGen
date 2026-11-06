@@ -111,7 +111,12 @@ namespace Gfx
 	template<typename T, int size>
 	struct ResourceBuffer
 	{
-		T buffer[size];
+		ResourceBuffer()
+			: buffer( size )
+		{
+		}
+
+		std::vector<T> buffer;
 		int count = 0;
 	};
 
@@ -187,7 +192,7 @@ namespace Gfx
 		// RenderableObject renderableObjects[100];
 		Model models[10];
 		Mesh meshes[10];
-		ResourceBuffer<RenderableObject, 1000> renderableObjects;
+		ResourceBuffer<RenderableObject, 1000000> renderableObjects;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;

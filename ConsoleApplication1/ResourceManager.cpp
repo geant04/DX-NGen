@@ -232,7 +232,7 @@ namespace Gfx
 	{
 		Texture texture;
 		texture.format = format;
-		texture.srvFormat = ( format == DXGI_FORMAT_D16_UNORM ) ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_UNKNOWN;
+		texture.srvFormat = ( format == DXGI_FORMAT_D32_FLOAT ) ? DXGI_FORMAT_R32_FLOAT : DXGI_FORMAT_UNKNOWN;
 		texture.mips = mips;
 
 		if ( !isDepth )

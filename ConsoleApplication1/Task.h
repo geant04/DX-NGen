@@ -148,6 +148,7 @@ public:
 	ID3D12Resource* resource = nullptr;
     D3D12_RESOURCE_STATES stateBefore = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES stateAfter = D3D12_RESOURCE_STATE_COMMON;
+	D3D12_RESOURCE_BARRIER_TYPE type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 

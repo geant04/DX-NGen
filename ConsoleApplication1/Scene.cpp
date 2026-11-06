@@ -18,10 +18,10 @@ void BuildScene( MinimalDXApp* app )
 		sceneObjects.push_back(testCube);
 	}
 
-	const unsigned int numTestObjects = 400;
+	const unsigned int numTestObjects = 1000000 - 2;
 	std::mt19937 randomGenerator( 0xC0FFEEu );
-	std::uniform_real_distribution<float> positionDistribution( -100.0f, 100.0f );
-	std::uniform_real_distribution<float> positionYDistribution( -1.0f, 5.0f );
+	std::uniform_real_distribution<float> positionDistribution( -250.0f, 250.0f );
+	std::uniform_real_distribution<float> positionYDistribution( -1.0f, 2.0f );
 
 	for ( unsigned int i = 0; i < numTestObjects; i++ )
 	{
@@ -36,7 +36,7 @@ void BuildScene( MinimalDXApp* app )
 
 		Gfx::RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 		testCube->mesh = resources.globalTestCubeMesh;
-		testCube->transform.Scale( { 2.0f, 2.5f, 2.0f } );
+		testCube->transform.Scale( { 0.2f, 0.2f, 0.2f } );
 		testCube->transform.Translate( { randomXPos, randomYPos, randomZPos } );
 		testCube->isShadowCaster = true;
 		sceneObjects.push_back(testCube);

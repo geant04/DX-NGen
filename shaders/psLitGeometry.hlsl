@@ -6,6 +6,7 @@ struct PSInput
 	float4 lightPosition : COLOR0;
 	float3 normal : NORMAL;
 	float2 uv : TEXCOORD;
+	nointerpolation uint limitCulled : TEXCOORD1;
 };
 
 cbuffer CameraConstants : register(b0)
@@ -80,9 +81,9 @@ float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
 
 float4 PSMain(PSInput input) : SV_TARGET
 {	
-	float shadow = GetShadow( input.lightPosition, input.position.xy );
+	float shadow = input.limitCulled ? 0.0f : GetShadow( input.lightPosition, input.position.xy );
 	
-	float3 outColor = 0.85f;
+	float3 outColor = input.limitCulled ? float3( 1.0f, 1.0f, 1.0f ) :0.25f;
 	float3 normal = normalize( input.normal.rgb );
 	float3 sunDir = normalize( data.sunDirection.rgb );
 	

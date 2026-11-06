@@ -90,7 +90,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 
 	Gfx::CreateRWTexture( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
 	Gfx::CreateReadTexture( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
-	Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
+	Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D32_FLOAT, 1 );
 	Gfx::CreateConstantBuffer( device, cameraDataBuffer, &resources, &app->cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 	Gfx::CreateRTV( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
 	
@@ -110,8 +110,8 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	// This is a temporary hack because I want to say "I added shadow maps!" to my engine.
 	const unsigned int shadowMapSize = 2048;
 	Gfx::Texture* sunShadowMap = Gfx::AddTexture( &resources );
-	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D16_UNORM, 1 );
-	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R16_UNORM, 1 );
+	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D32_FLOAT, 1 );
+	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R32_FLOAT, 1 );
 
 	// Sync
 	{
@@ -155,32 +155,6 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		transformBuffer->structuredByteStride = sizeof( Transform );
 		Gfx::CreateSRVBuffer( device, transformBuffer, &resources );
 
-		std::shared_ptr<DrawTask> drawShadows = std::make_shared<DrawTask>();
-		{
-			Gfx::Buffer* shadowCameraData = Gfx::AddBuffer( &resources );
-			Gfx::CreateConstantBuffer( device, shadowCameraData, &resources, 
-				&drawShadows->drawConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-			shadowCameraData->isDynamic = true;
-
-			drawShadows->pass = &app->scene.shadowPass;
-			drawShadows->constantBuffers.push_back( shadowCameraData );
-			drawShadows->readBuffers.push_back( transformBuffer );
-			drawShadows->initResources.vertexShaderName = "vsIndirectGeometryShadows.hlsl";
-			drawShadows->initResources.pixelShaderName = nullptr;
-			drawShadows->clearDepth = true;
-			drawShadows->depthTest = true;
-			drawShadows->viewportWidth = shadowMapSize;
-			drawShadows->viewportHeight = shadowMapSize;
-			drawShadows->BindRenderTargets( {}, sunShadowMap, &resources );
-		}
-
-		if ( !Gfx::CreateDrawTask( app, drawShadows.get() ) )
-		{
-			return;
-		}
-		app->shadowTasks.push_back( drawShadows );
-
-
 		Gfx::Buffer* transformIndexOffsetBuffer = app->scene.opaquePass.transformIndexOffsets;
 		Gfx::Buffer* indirectDrawArgsBuffer = app->scene.opaquePass.indirectCommandBuffer;
 		Gfx::Buffer* transformBatchIdsBuffer = app->scene.opaquePass.transformBatchIds;
@@ -205,6 +179,32 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			Gfx::CreateSRVBuffer( device, transformBatchIdsBuffer, &resources );
 		}
 
+		std::shared_ptr<DrawTask> drawShadows = std::make_shared<DrawTask>();
+		{
+			Gfx::Buffer* shadowCameraData = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, shadowCameraData, &resources, 
+				&drawShadows->drawConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			shadowCameraData->isDynamic = true;
+
+			drawShadows->pass = &app->scene.shadowPass;
+			drawShadows->constantBuffers.push_back( shadowCameraData );
+			drawShadows->readBuffers.push_back( transformBuffer );
+			drawShadows->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawShadows->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
+			drawShadows->initResources.pixelShaderName = nullptr;
+			drawShadows->clearDepth = true;
+			drawShadows->depthTest = true;
+			drawShadows->viewportWidth = shadowMapSize;
+			drawShadows->viewportHeight = shadowMapSize;
+			drawShadows->BindRenderTargets( {}, sunShadowMap, &resources );
+		}
+
+		if ( !Gfx::CreateDrawTask( app, drawShadows.get() ) )
+		{
+			return;
+		}
+		// app->shadowTasks.push_back( drawShadows );
+
 		std::shared_ptr<ComputeTask> drawOpaqueCull = std::make_shared<ComputeTask>();
 		{
 			drawOpaqueCull->readBuffers.push_back( transformBuffer );
@@ -216,7 +216,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			unsigned int numElements = app->scene.opaquePass.batchIds.size();
 			drawOpaqueCull->initResources.csAssetName = "csCull.hlsl";
 			drawOpaqueCull->initResources.entryPoint = "main";
-			drawOpaqueCull->initResources.dispatchWidth = ( numElements + 7) / 8;
+			drawOpaqueCull->initResources.dispatchWidth = ( numElements + 63 ) / 64;
 			drawOpaqueCull->initResources.dispatchHeight = 1;
 		}
 
@@ -254,6 +254,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( IndirectToUav( indirectDrawArgsBuffer ) );
 			app->tasks.push_back( clearDrawArgs( app, 
 				app->scene.opaquePass.indirectCommandBuffer, numBatches ) );
+			app->tasks.push_back( UavBarrier( indirectDrawArgsBuffer->resource ) );
 			app->tasks.push_back( drawOpaqueCull );
 			app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
 			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
@@ -276,7 +277,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		drawDebugView->depthTest = false;
 		drawDebugView->outputToBackBuffer = true;
 
-		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R16_UNORM, 1 );
+		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R32_FLOAT, 1 );
 		drawDebugView->readTextures.push_back( sunShadowMap );
 		drawDebugView->staticSamplers.push_back( bilinearSamplerClamp );
 
@@ -320,6 +321,10 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		app->tasks.push_back( SrvToUav( outBuffer ) );
 		app->tasks.push_back( fxaa );
 		app->tasks.push_back( UavToSrv( outBuffer ) );
+	}
+	else
+	{
+		outBuffer = screenTexture;
 	}
 	app->tasks.push_back( drawToScreen( app, outBuffer, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
 	if ( true )

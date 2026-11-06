@@ -85,6 +85,11 @@ inline std::shared_ptr<BarrierTask> UavToIndirect( Gfx::Buffer* buffer )
 		D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT );
 }
 
+inline std::shared_ptr<BarrierTask> UavBarrier( ComPtr<ID3D12Resource> resource )
+{
+	return Gfx::CreateUavBarrierTask( resource );
+}
+
 inline std::shared_ptr<DrawTask> drawToScreen( MinimalDXApp* app, 
 	Gfx::Texture* input, 
 	Gfx::Sampler* bilinearSamplerClamp, 
