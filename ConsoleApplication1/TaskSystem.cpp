@@ -235,7 +235,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			drawOpaque->readTextures.push_back( sunShadowMap );
 			drawOpaque->staticSamplers.push_back( bilinearSamplerClamp );
 			drawOpaque->staticSamplers.push_back( pcfShadowSampler );
-			drawOpaque->initResources.vertexShaderName = "vsIndirectGeometryShadows.hlsl";
+			drawOpaque->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
 			drawOpaque->initResources.pixelShaderName = "psLitGeometry.hlsl";
 			drawOpaque->clearRenderTarget = false;
 			drawOpaque->clearDepth = true;
@@ -249,15 +249,15 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			return;
 		}
 
-		//{
-		//	app->tasks.push_back( SrvToUav( transformIndexOffsetBuffer ) );
-		//	app->tasks.push_back( IndirectToUav( indirectDrawArgsBuffer ) );
-		//	app->tasks.push_back( clearDrawArgs( app, 
-		//		app->scene.opaquePass.indirectCommandBuffer, numBatches ) );
-		//	app->tasks.push_back( drawOpaqueCull );
-		//	app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
-		//	app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
-		//}
+		{
+			app->tasks.push_back( SrvToUav( transformIndexOffsetBuffer ) );
+			app->tasks.push_back( IndirectToUav( indirectDrawArgsBuffer ) );
+			app->tasks.push_back( clearDrawArgs( app, 
+				app->scene.opaquePass.indirectCommandBuffer, numBatches ) );
+			app->tasks.push_back( drawOpaqueCull );
+			app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
+			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
+		}
 		app->tasks.push_back( drawOpaque );
 	}
 

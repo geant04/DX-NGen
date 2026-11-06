@@ -18,10 +18,10 @@ void BuildScene( MinimalDXApp* app )
 		sceneObjects.push_back(testCube);
 	}
 
-	const unsigned int numTestObjects = 500;
+	const unsigned int numTestObjects = 400;
 	std::mt19937 randomGenerator( 0xC0FFEEu );
-	std::uniform_real_distribution<float> positionDistribution( -50.0f, 50.0f );
-	std::uniform_real_distribution<float> positionYDistribution( 0.0f, 10.0f );
+	std::uniform_real_distribution<float> positionDistribution( -100.0f, 100.0f );
+	std::uniform_real_distribution<float> positionYDistribution( -1.0f, 5.0f );
 
 	for ( unsigned int i = 0; i < numTestObjects; i++ )
 	{
@@ -271,7 +271,7 @@ void PrepareScene( MinimalDXApp* app )
 	PreparePassObjects( scene, sceneObjects );
 	PrepareBatchesForPass( &scene->opaquePass );
 	PrepareBatchesForPass( &scene->shadowPass );
-	PrepareSceneIndirectDraw( app, &scene->opaquePass, true );
+	PrepareSceneIndirectDraw( app, &scene->opaquePass, false );
 	PrepareSceneIndirectDraw( app, &scene->shadowPass, true );
 	
 	// Finish upload

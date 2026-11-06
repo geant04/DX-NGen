@@ -14,12 +14,22 @@ cbuffer CameraConstants : register(b0)
 
 bool IsInFrustum( in float4x4 viewProj, in TransformData transform )
 {
-	float3 worldPosition = mul( transform.model, float4( 0.0f, 0.0f, 0.0f, 1.0f ) ).xyz;
-	float arbitraryRadiusForNowBecauseISaidSo = 10.0f;
+	// The cube is centered on its pivot, so the local center is the origin.
+	float3 center = mul( transform.model, float4( 0.0f, 0.0f, 0.0f, 1.0f ) ).xyz;
+
+	float4 homogClipPos = mul( viewProj, float4( center, 1.0f ) );
+	float x = homogClipPos.x;
+	float y = homogClipPos.y;
+	float z = homogClipPos.z;
+	float w = homogClipPos.w;
+
+	bool depthCheck = ( 0 < z && z < w );
 	
-	// Frustum plane check does its frustum plane check thing ma-bober. Sweet.
-	// For now, skip this culling process. Check if we can run this compute shader with all my refactors in-place for RW buffers.
-	return true;
+	float wp = w * 0.60f;
+	bool xCheck = ( -wp < x && x < wp );
+	bool yCheck = ( -wp < y && y < wp );
+	
+	return xCheck && yCheck && depthCheck;
 }
 
 [numthreads( CS_CULL_WIDTH, 1, 1 )]
@@ -34,7 +44,7 @@ void main( uint3 dtid : SV_DispatchThreadID )
 	}
 	
 	TransformData transform = transforms[transformId];
-	float4x4 viewProj = data.modelViewProj;
+	float4x4 viewProj = ( data.modelViewProj );
 	
 	if ( IsInFrustum( viewProj, transform ) )
 	{
