@@ -205,8 +205,9 @@ namespace Gfx
 		{
 			std::vector<DescriptorIndex> readDescriptorIndices;
 			std::vector<DescriptorIndex> readWriteDescriptorIndices;
-			std::vector<DescriptorIndex> bufferDescriptorIndices;
-			std::vector<DescriptorIndex> dynamicBufferDescriptorIndices;
+			std::vector<DescriptorIndex> readBufferDescriptorIndices;
+			std::vector<DescriptorIndex> constantBufferDescriptorIndices;
+			std::vector<DescriptorIndex> writeBufferDescriptorIndices;
 
 			for ( Texture* readTexture : task->readTextures )
 			{
@@ -226,29 +227,40 @@ namespace Gfx
 				readWriteDescriptorIndices.push_back( { readWriteTexture->uav.index } );
 			}
 			
-			for ( Gfx::Buffer* buffer : task->buffers )
+			for ( Gfx::Buffer* buffer : task->readBuffers )
 			{
 				if ( buffer == nullptr || !buffer->srv.IsValid() )
 				{
 					return false;
 
 				}
-				bufferDescriptorIndices.push_back( { buffer->srv.index } );
+				readBufferDescriptorIndices.push_back( { buffer->srv.index } );
 			}
 
-			for ( Gfx::Buffer* dynamicBuffer : task->dynamicBuffers )
+			for ( Gfx::Buffer* buffer : task->writeBuffers )
 			{
-				if ( dynamicBuffer == nullptr || !dynamicBuffer->cbv.IsValid() )
+				if ( buffer == nullptr || !buffer->uav.IsValid() )
+				{
+					return false;
+
+				}
+				writeBufferDescriptorIndices.push_back( { buffer->uav.index } );
+			}
+
+			for ( Gfx::Buffer* buffer : task->constantBuffers )
+			{
+				if ( buffer == nullptr || !buffer->cbv.IsValid() )
 				{
 					return false;
 				}
-				dynamicBufferDescriptorIndices.push_back( { dynamicBuffer->cbv.index } );
+				constantBufferDescriptorIndices.push_back( { buffer->cbv.index } );
 			}
 
-			if ( !PrepareDescriptorTable( app->device, &app->resources, readDescriptorIndices,			&task->bindings.readTextures ) )		return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, readWriteDescriptorIndices,		&task->bindings.readWriteTextures ) )	return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, bufferDescriptorIndices,		&task->bindings.buffers ) )				return false;
-			if ( !PrepareDescriptorTable( app->device, &app->resources, dynamicBufferDescriptorIndices,	&task->bindings.dynamicBuffers ) )		return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readDescriptorIndices,				&task->bindings.readTextures ) )		return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readWriteDescriptorIndices,			&task->bindings.readWriteTextures ) )	return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, readBufferDescriptorIndices,		&task->bindings.readBuffers ) )			return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, writeBufferDescriptorIndices,		&task->bindings.writeBuffers ) )		return false;
+			if ( !PrepareDescriptorTable( app->device, &app->resources, constantBufferDescriptorIndices,	&task->bindings.constantBuffers ) )		return false;
 		}
 		else
 		{
@@ -269,20 +281,21 @@ namespace Gfx
 
 		if ( !PrepareBindings( app, drawTask ) )
 		{
+			std::cout << "ERROR: Could not prepare bindings!" << std::endl;
 			return false;
 		}
 
 		Gfx::BuildRootSignature( app->device, drawTask );
 		if ( !drawTask->rootSignature )
 		{
-			std::cout << "BIG PROBLEM!!!!!!" << std::endl;
+			std::cout << "ERROR: Could not build root signature!" << std::endl;
 			return false;
 		}
 
 		Gfx::CreatePSO( app->device, drawTask );
 		if ( !drawTask->pipelineState )
 		{
-			std::cout << "BIG PROBLEM!!!!!!" << std::endl;
+			std::cout << "ERROR: Could not build PSO!" << std::endl;
 			return false;
 		}
 

@@ -12,6 +12,7 @@ struct CameraConstantsData
 	bool resetPathTracer;
 	float invScreenWidth;
 	float invScreenHeight;
+	uint numTransforms;
 };
 
 struct TransformData
@@ -20,6 +21,14 @@ struct TransformData
 	float4x4 rotate;
 	float4x4 scale;
 	float4x4 translate;
+};
+
+struct IndirectCommand
+{
+	uint vertexCountPerInstance;
+	uint instanceCount;
+	uint startVertexLocation;
+	uint startInstanceLocation;
 };
 
 #endif // #ifndef __COMMON_BUFFERS_HLSLI__

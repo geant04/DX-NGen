@@ -456,14 +456,22 @@ void MinimalDXApp::Render()
 		{	
 			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
 			{
-				if ( !drawTask->dynamicBuffers.empty() )
+				if ( !drawTask->constantBuffers.empty() && drawTask->constantBuffers[0]->isDynamic )
 				{
 					// update model matrix hack
-					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->constantBuffers[0]->cpuBufferData );
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
-					XMMATRIX model = drawTask->pass ? XMMatrixIdentity() 
-													: XMLoadFloat4x4( &drawTask->model->transform.model );
+					XMMATRIX model;
+					if ( drawTask->pass )
+					{
+						model = XMMatrixIdentity();
+						cb->numTransforms = drawTask->pass->batchIds.size();
+					}
+					else
+					{
+						model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					}
 
 					const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
 					const XMMATRIX lightModelViewProj = model * lightViewProj;
@@ -479,15 +487,22 @@ void MinimalDXApp::Render()
 		{	
 			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
 			{
-				if ( !drawTask->dynamicBuffers.empty() )
+				if ( !drawTask->constantBuffers.empty() && drawTask->constantBuffers[0]->isDynamic )
 				{
 					// update model matrix hack
-					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->constantBuffers[0]->cpuBufferData );
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
-					
-					XMMATRIX model = drawTask->pass ? XMMatrixIdentity() 
-													: XMLoadFloat4x4( &drawTask->model->transform.model );
+					XMMATRIX model;
+					if ( drawTask->pass )
+					{
+						model = XMMatrixIdentity();
+						cb->numTransforms = drawTask->pass->batchIds.size();
+					}
+					else
+					{
+						model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					}
 
 					const XMMATRIX& viewProj = cameraData.viewProj;
 					const XMMATRIX modelViewProj = model * viewProj;
@@ -504,27 +519,27 @@ void MinimalDXApp::Render()
 		}
 	}
 	
-    // Transition back buffer to present
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        resources.swapChainTextures[frameIndex].resource.Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PRESENT
-    );
+	// Transition back buffer to present
+	barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+		resources.swapChainTextures[frameIndex].resource.Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_PRESENT
+	);
 
-    commandList->ResourceBarrier(1, &barrier);
+	commandList->ResourceBarrier(1, &barrier);
 
-    // Close and execute
-    commandList->Close();
+	// Close and execute
+	commandList->Close();
 
 	// ACTUAL rendering part
-    ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
-    commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
+	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-    // Present
-    swapChain->Present(1, 0);
+	// Present
+	swapChain->Present(1, 0);
 
-    // Wait for GPU to finish
-    WaitForPreviousFrame();
+	// Wait for GPU to finish
+	WaitForPreviousFrame();
 }
 
 void MinimalDXApp::Run()

@@ -12,7 +12,8 @@ struct CameraConstants {
 	bool resetPathTracer;
 	float invScreenWidth;
 	float invScreenHeight;
-	uint32_t padding0[1];
+	uint32_t numTransforms; // not a good solution for now
+	uint32_t padding[3];
 };
 
 
@@ -32,7 +33,7 @@ struct Camera
 
 	float fov = XM_PIDIV4;
 	float nearZ = 0.1f;
-	float farZ = 100.0f;
+	float farZ = 1000.0f;
 
 	// Global camera tracking vars
 	bool isLeftMouseDown = false;

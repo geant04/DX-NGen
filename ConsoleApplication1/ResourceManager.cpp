@@ -154,6 +154,23 @@ namespace Gfx
 		return true;
 	}
 
+	bool AllocateUAVBuffer( ComPtr<ID3D12Device> device, DescriptorHeap* shaderResourceHeap, Buffer* buffer )
+	{
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		uavDesc.Buffer.FirstElement = 0;
+		uavDesc.Buffer.NumElements = buffer->numElements;
+		uavDesc.Buffer.StructureByteStride = buffer->structuredByteStride;
+		uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+		device->CreateUnorderedAccessView( buffer->resource.Get(), nullptr, &uavDesc, shaderResourceHeap->GetCpuHandle() );
+
+		buffer->uav.index = shaderResourceHeap->handleIndex;
+		shaderResourceHeap->handleIndex++;
+
+		return true;
+	}
+
 	void CreateSwapChainRTVs( ComPtr<ID3D12Device> device, ComPtr<IDXGISwapChain4> swapChain, Resources* resources, uint32_t frameCount )
 	{
 		DescriptorHeap* rtvDescriptorHeap = &resources->globalDescriptorHeap.rtvGlobalHeap;
@@ -349,6 +366,16 @@ namespace Gfx
 		}
 
 		return AllocateSRVBuffer( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
+	}
+
+	bool CreateUAVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources )
+	{
+		if ( buffer == nullptr )
+		{
+			return false;
+		}
+		
+		return AllocateUAVBuffer( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
 	}
 
 	bool CreateRenderTargetFromTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources )

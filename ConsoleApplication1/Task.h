@@ -4,6 +4,7 @@
 #include "Mesh.h"
 #include "Camera.h"
 #include "ResourceManager.h"
+#include "Scene.h"
 
 struct PreparedDescriptorTable
 {
@@ -15,8 +16,9 @@ struct PreparedBindings
 {
 	PreparedDescriptorTable readTextures;
 	PreparedDescriptorTable readWriteTextures;
-	PreparedDescriptorTable buffers;
-	PreparedDescriptorTable dynamicBuffers;
+	PreparedDescriptorTable readBuffers;
+	PreparedDescriptorTable writeBuffers;
+	PreparedDescriptorTable constantBuffers;
 };
 
 enum TaskType
@@ -49,8 +51,9 @@ public:
 
 	std::vector<Gfx::Texture*> readTextures;
 	std::vector<Gfx::Texture*> readWriteTextures;
-	std::vector<Gfx::Buffer*> buffers;
-	std::vector<Gfx::Buffer*> dynamicBuffers;
+	std::vector<Gfx::Buffer*> readBuffers;
+	std::vector<Gfx::Buffer*> writeBuffers;
+	std::vector<Gfx::Buffer*> constantBuffers;
 
 	std::vector<Gfx::Sampler*> staticSamplers;
 
@@ -88,7 +91,7 @@ public:
 	int viewportHeight;
 
 	Model* model;
-	RenderableObject* object;
+	Gfx::RenderableObject* object;
 	
 	// Some random indirect thing slapped in
 	Pass* pass;
@@ -111,6 +114,8 @@ public:
 	) override;
 
 	InitResources initResources;
+
+	unsigned int drawTaskID = 0;
 
 	virtual TaskType getType() const override { return Draw; }
 };

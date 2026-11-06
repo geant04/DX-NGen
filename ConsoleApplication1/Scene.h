@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include "Model.h"
+#include "ResourceManager.h"
 
 struct MinimalDXApp;
 
@@ -15,14 +16,6 @@ struct IndirectBatch
 	uint32_t count;
 };
 
-struct RenderableObject
-{
-	Transform transform = {};
-	Mesh* mesh;
-	uint32_t materialId = 0;
-	bool isShadowCaster = false;
-};
-
 struct IndirectCommand
 {
 	D3D12_DRAW_ARGUMENTS drawArgs;
@@ -31,18 +24,21 @@ struct IndirectCommand
 struct Pass
 {
 	std::vector<IndirectCommand> commands;
-	std::vector<RenderableObject*> objects = {};
+	std::vector<Gfx::RenderableObject*> objects = {};
 	IndirectBatch batches[MAX_BATCHES];
 	unsigned int batchCount = 0;
 
+	Gfx::Buffer* indirectCommandBuffer = nullptr;
 	ComPtr<ID3D12CommandSignature> commandSignature;
-	ComPtr<ID3D12Resource> indirectCommandBuffer;
-	ComPtr<ID3D12Resource> indirectCommandUpload;
+
+	std::vector<int> batchIds = {};
+	Gfx::Buffer* transformIndexOffsets = nullptr;
+	Gfx::Buffer* transformBatchIds = nullptr;
 };
 
 struct Scene
 {
-	std::vector<RenderableObject*> sceneObjects = {};
+	std::vector<Gfx::RenderableObject*> sceneObjects = {};
 
 	Pass opaquePass = {};
 	Pass shadowPass = {};

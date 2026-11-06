@@ -138,8 +138,9 @@
     <None Include="..\README.md" />
     <None Include="..\shaders\psLitGeometry.hlsl" />
     <None Include="..\shaders\csFxaa.hlsl" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="..\shaders\vsIndirectGeometry.hlsl" />
+    <None Include="..\shaders\vsIndirectGeometry.hlsl" />
+    <None Include="..\shaders\csCull.hlsl" />
+    <None Include="..\shaders\csMemSetZero.hlsl" />
+    <None Include="..\shaders\vsIndirectGeometryShadows.hlsl" />
   </ItemGroup>
 </Project>

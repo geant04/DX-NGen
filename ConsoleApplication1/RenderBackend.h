@@ -30,13 +30,18 @@ namespace Gfx
 	};
 
 	template<typename T>
-	void UploadBuffer( MinimalDXApp* app, UploadBufferInfo<T>* info, D3D12_RESOURCE_STATES finalState )
+	void UploadBuffer( MinimalDXApp* app, 
+		UploadBufferInfo<T>* info, 
+		D3D12_RESOURCE_STATES finalState, 
+		D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE )
 	{
 		const ComPtr<ID3D12Device> device = app->device;
 
 		CD3DX12_HEAP_PROPERTIES defaultHeapProps( D3D12_HEAP_TYPE_DEFAULT );
 		CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD); // intermediate heap
-		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer( info->objectBufferSize );
+		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer( info->objectBufferSize, resourceFlags );
+		CD3DX12_RESOURCE_DESC uploadBufferDesc = CD3DX12_RESOURCE_DESC::Buffer( info->objectBufferSize );
+
 
 		// Buffer will reside on the GPU as a default heap
 		device->CreateCommittedResource(
@@ -51,7 +56,7 @@ namespace Gfx
 		device->CreateCommittedResource(
 			&uploadHeapProps,
 			D3D12_HEAP_FLAG_NONE,
-			&bufferDesc,
+			&uploadBufferDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			nullptr,
 			IID_PPV_ARGS( &info->bufferUpload )
@@ -76,13 +81,13 @@ namespace Gfx
 	void UploadMeshBuffer( MinimalDXApp* app, UploadMeshBufferInfo* info );
 
 	inline std::shared_ptr<BarrierTask> CreateBarrierTask(
-		Gfx::Texture* screenTexture,
+		ComPtr<ID3D12Resource> resource,
 		D3D12_RESOURCE_STATES stateBefore,
 		D3D12_RESOURCE_STATES stateAfter
 	)
 	{
 		std::shared_ptr<BarrierTask> task = std::make_shared<BarrierTask>();
-		task->resource = screenTexture->resource.Get();
+		task->resource = resource.Get();
 		task->stateBefore = stateBefore;
 		task->stateAfter = stateAfter;
 		return task;

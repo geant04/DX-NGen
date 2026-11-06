@@ -4,7 +4,6 @@
 #include "ResourceHandles.h"
 #include "Mesh.h"
 #include "Model.h"
-#include "Scene.h"
 #include <vector>
 
 #define SWAPCHAIN_COUNT 2
@@ -84,6 +83,7 @@ namespace Gfx
 	struct Buffer
 	{
 		ComPtr<ID3D12Resource> resource;
+		ComPtr<ID3D12Resource> upload;
 
 		UINT sizeInBytes;
 		UINT cpuDataSize;
@@ -97,6 +97,8 @@ namespace Gfx
 		DescriptorIndex srv;
 		DescriptorIndex uav;
 		DescriptorIndex cbv;
+
+		bool isDynamic = false;
 	};
 
 	struct Sampler
@@ -111,6 +113,14 @@ namespace Gfx
 	{
 		T buffer[size];
 		int count = 0;
+	};
+
+	struct RenderableObject
+	{
+		Transform transform = {};
+		Mesh* mesh;
+		uint32_t materialId = 0;
+		bool isShadowCaster = false;
 	};
 
 	struct Resources
@@ -177,7 +187,7 @@ namespace Gfx
 		// RenderableObject renderableObjects[100];
 		Model models[10];
 		Mesh meshes[10];
-		ResourceBuffer<RenderableObject, 100> renderableObjects;
+		ResourceBuffer<RenderableObject, 1000> renderableObjects;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;
@@ -220,6 +230,8 @@ namespace Gfx
 	bool CreateConstantBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources, void* data, const UINT sizeInBytes, const UINT cpuDataSize );
 
 	bool CreateSRVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources );
+
+	bool CreateUAVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources );
 
 	bool CreateDepthTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
 

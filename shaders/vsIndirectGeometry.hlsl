@@ -7,6 +7,10 @@ cbuffer CameraConstants : register(b0)
 
 StructuredBuffer<TransformData> transforms : register(t0, space1);
 
+#if !SHADOW_PASS
+StructuredBuffer<int> transformIndexOffsets : register(t1, space1);
+#endif
+
 struct VSInput
 {
 	float4 position : POSITION;
@@ -26,7 +30,12 @@ VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 {
 	VSOutput output;
 	
-	TransformData transform = transforms[instanceId];
+	int indexOffset = instanceId;
+#if !SHADOW_PASS
+	indexOffset = transformIndexOffsets[instanceId];
+#endif
+	TransformData transform = transforms[indexOffset];
+	
 	float4 worldPosition = mul( transform.model, float4( input.position.xyz, 1.0f ) );
 	
 	// Did a bit of a hack so that in this indirect call, "modelViewProj" actually just

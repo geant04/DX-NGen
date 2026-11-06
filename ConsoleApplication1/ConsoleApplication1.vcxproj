@@ -193,7 +193,16 @@
     <None Include="..\shaders\csFxaa.hlsl">
       <FileType>Document</FileType>
     </None>
-      <None Include="..\shaders\vsIndirectGeometry.hlsl">
+    <None Include="..\shaders\vsIndirectGeometry.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\csCull.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\csMemSetZero.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="..\shaders\vsIndirectGeometryShadows.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

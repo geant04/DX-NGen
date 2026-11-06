@@ -5,10 +5,10 @@
 
 void BuildScene( MinimalDXApp* app )
 {
-	std::vector<RenderableObject*>& sceneObjects = app->scene.sceneObjects;
+	std::vector<Gfx::RenderableObject*>& sceneObjects = app->scene.sceneObjects;
 	Gfx::Resources& resources = app->resources;
 
-	RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
+	Gfx::RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 
 	{
 		testCube->mesh = resources.globalTestCubeMesh;
@@ -18,10 +18,10 @@ void BuildScene( MinimalDXApp* app )
 		sceneObjects.push_back(testCube);
 	}
 
-	const unsigned int numTestObjects = 80;
+	const unsigned int numTestObjects = 500;
 	std::mt19937 randomGenerator( 0xC0FFEEu );
-	std::uniform_real_distribution<float> positionDistribution( -20.0f, 20.0f );
-	std::uniform_real_distribution<float> positionYDistribution( 0.0f, 5.0f );
+	std::uniform_real_distribution<float> positionDistribution( -50.0f, 50.0f );
+	std::uniform_real_distribution<float> positionYDistribution( 0.0f, 10.0f );
 
 	for ( unsigned int i = 0; i < numTestObjects; i++ )
 	{
@@ -34,7 +34,7 @@ void BuildScene( MinimalDXApp* app )
 			break;
 		}
 
-		RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
+		Gfx::RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 		testCube->mesh = resources.globalTestCubeMesh;
 		testCube->transform.Scale( { 2.0f, 2.5f, 2.0f } );
 		testCube->transform.Translate( { randomXPos, randomYPos, randomZPos } );
@@ -42,14 +42,14 @@ void BuildScene( MinimalDXApp* app )
 		sceneObjects.push_back(testCube);
 	}
 
-	RenderableObject* floor = Gfx::AddToResourceBuffer( &resources.renderableObjects );
+	Gfx::RenderableObject* floor = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 	floor->mesh = resources.globalTestCubeMesh;
-	floor->transform.Scale( { 100.0f, 0.5f, 100.0f } );
+	floor->transform.Scale( { 500.0f, 0.5f, 500.0f } );
 	floor->transform.Translate( { 0.0f, -0.75f, 0.0f } );
 	sceneObjects.push_back(floor);
 }
 
-void UploadSceneMeshes( MinimalDXApp* app, std::vector<RenderableObject*>& sceneObjects )
+void UploadSceneMeshes( MinimalDXApp* app, std::vector<Gfx::RenderableObject*>& sceneObjects )
 {
 	// Backend logic should be moved to RenderBackend!
 	// Group all mesh data together...
@@ -59,7 +59,7 @@ void UploadSceneMeshes( MinimalDXApp* app, std::vector<RenderableObject*>& scene
 	uint32_t vertexCount = 0;
 	uint32_t uniqueMeshCount = 0;
 
-	for ( RenderableObject* renderableObject : sceneObjects )
+	for ( Gfx::RenderableObject* renderableObject : sceneObjects )
 	{
 		Mesh* meshPtr = renderableObject->mesh;
 
@@ -115,9 +115,9 @@ void UploadSceneMeshes( MinimalDXApp* app, std::vector<RenderableObject*>& scene
 	scene->transformBufferUpload = transformBufferInfo.bufferUpload;
 }
 
-static void PreparePassObjects( Scene* scene, std::vector<RenderableObject*>& sceneObjects )
+static void PreparePassObjects( Scene* scene, std::vector<Gfx::RenderableObject*>& sceneObjects )
 {
-	for ( RenderableObject* renderableObject : sceneObjects )
+	for ( Gfx::RenderableObject* renderableObject : sceneObjects )
 	{
 		scene->opaquePass.objects.push_back( renderableObject );
 
@@ -136,9 +136,11 @@ static void PrepareBatchesForPass( Pass* pass )
 	batchCount = 0;
 
 	// This assumes that meshes and materials are already pre-sorted.
+	// This also assumes that # objects == # of transforms, which... I don't even think is true.
+	// But we'll just roll with this for simplicity's sake because I want to see this work.
 	for ( unsigned int i = 0; i < pass->objects.size(); i++ )
 	{
-		RenderableObject* obj = pass->objects[i];
+		Gfx::RenderableObject* obj = pass->objects[i];
 
 		uint32_t materialId = obj->materialId;
 		Mesh* meshPtr = obj->mesh;
@@ -163,10 +165,12 @@ static void PrepareBatchesForPass( Pass* pass )
 		{
 			pass->batches[pass->batchCount - 1].count++;
 		}
+
+		pass->batchIds.push_back( batchCount - 1 );
 	}
 }
 
-static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass )
+static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShadow )
 {	
 	std::vector<IndirectCommand>& commands = pass->commands;
 	commands.resize( pass->batchCount );
@@ -177,16 +181,16 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass )
 	
 	D3D12_COMMAND_SIGNATURE_DESC commandSignatureDesc = {};
 	commandSignatureDesc.pArgumentDescs = argumentDescs;
-	commandSignatureDesc.NumArgumentDescs = _countof(argumentDescs);
+	commandSignatureDesc.NumArgumentDescs = _countof( argumentDescs );
 	commandSignatureDesc.ByteStride = sizeof( IndirectCommand );
 
-	app->device->CreateCommandSignature(&commandSignatureDesc, nullptr, IID_PPV_ARGS(&pass->commandSignature) );
+	app->device->CreateCommandSignature( &commandSignatureDesc, nullptr, IID_PPV_ARGS( &pass->commandSignature ) );
 
 	for ( int batchIdx = 0; batchIdx < pass->batchCount; batchIdx++ )
 	{
 		IndirectBatch* batch = &pass->batches[batchIdx];
 
-		commands[batchIdx].drawArgs.InstanceCount = batch->count;
+		commands[batchIdx].drawArgs.InstanceCount = isShadow ? batch->count : 0; // Instance count is populated during CS_Cull
 		commands[batchIdx].drawArgs.StartInstanceLocation = batch->first;
 		commands[batchIdx].drawArgs.StartVertexLocation = batch->mesh->vertexOffset;
 		commands[batchIdx].drawArgs.VertexCountPerInstance = batch->mesh->vertexCount;
@@ -198,15 +202,56 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass )
 		return;
 	}
 
+	Gfx::Buffer*& indirectCommandBuffer = pass->indirectCommandBuffer;
+	indirectCommandBuffer = Gfx::AddBuffer( &app->resources );
+
 	Gfx::UploadBufferInfo<IndirectCommand> commandBufferInfo = {};
-	commandBufferInfo.buffer = pass->indirectCommandBuffer;
-	commandBufferInfo.bufferUpload = pass->indirectCommandUpload;
+	commandBufferInfo.buffer = indirectCommandBuffer->resource;
+	commandBufferInfo.bufferUpload = indirectCommandBuffer->upload;
 	commandBufferInfo.objects = &pass->commands[0];
 	commandBufferInfo.objectBufferSize = static_cast<uint32_t>( pass->batchCount * sizeof( IndirectCommand ) );
 
-	Gfx::UploadBuffer( app, &commandBufferInfo, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT );
-	pass->indirectCommandBuffer = commandBufferInfo.buffer;
-	pass->indirectCommandUpload = commandBufferInfo.bufferUpload;
+	Gfx::UploadBuffer( app, 
+		&commandBufferInfo, 
+		D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, 
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS );
+	indirectCommandBuffer->resource = commandBufferInfo.buffer;
+	indirectCommandBuffer->upload = commandBufferInfo.bufferUpload;
+
+	// Prepare index offsets used for finding the transform of visible instance geometry
+	// This works such that: offsetIdx[0, 1, 2, 4, ... ]
+	// Then, access by transforms[offsetIdx[instanceId]]; to get the transform matrix
+	// This assumes that everything is properly sorted. and that my logic works. Woop.
+	// I'm also making this index buffer store the transformBatchIds first, since I don't have a good way of separating
+	// the batchIds from the pass. Hopefully this works.
+	const unsigned int numTransforms = app->scene.transformCount;
+	Gfx::Buffer*& transformIndexOffsets = pass->transformIndexOffsets;
+	Gfx::Buffer*& transformBatchIds = pass->transformBatchIds;
+	transformIndexOffsets = Gfx::AddBuffer( &app->resources );
+	transformBatchIds = Gfx::AddBuffer( &app->resources );
+
+	Gfx::UploadBufferInfo<int> transformIndexBufferInfo = {};
+	transformIndexBufferInfo.buffer = transformIndexOffsets->resource;
+	transformIndexBufferInfo.bufferUpload = transformIndexOffsets->upload;
+	transformIndexBufferInfo.objects = &pass->batchIds[0];
+	transformIndexBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( int ) );
+
+	Gfx::UploadBuffer( app, 
+		&transformIndexBufferInfo, 
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS );
+	transformIndexOffsets->resource = transformIndexBufferInfo.buffer;
+	transformIndexOffsets->upload = transformIndexBufferInfo.bufferUpload;
+
+	Gfx::UploadBufferInfo<int> batchIdBufferInfo = {};
+	batchIdBufferInfo.buffer = transformBatchIds->resource;
+	batchIdBufferInfo.bufferUpload = transformBatchIds->upload;
+	batchIdBufferInfo.objects = &pass->batchIds[0];
+	batchIdBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( int ) );
+
+	Gfx::UploadBuffer( app, &batchIdBufferInfo, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE );
+	transformBatchIds->resource = batchIdBufferInfo.buffer;
+	transformBatchIds->upload = batchIdBufferInfo.bufferUpload;
 }
 
 void PrepareScene( MinimalDXApp* app )
@@ -215,7 +260,7 @@ void PrepareScene( MinimalDXApp* app )
 	// such that then DrawOpaque, or something like that, draws all opaque objects
 	// while then DrawShadow then does the shadow map drawing and what-not... all the fun-jazz
 	Scene* scene = &app->scene;
-	std::vector<RenderableObject*>& sceneObjects = scene->sceneObjects;
+	std::vector<Gfx::RenderableObject*>& sceneObjects = scene->sceneObjects;
 
 	// Begin upload
 	app->uploadCommandAllocator->Reset();
@@ -226,8 +271,8 @@ void PrepareScene( MinimalDXApp* app )
 	PreparePassObjects( scene, sceneObjects );
 	PrepareBatchesForPass( &scene->opaquePass );
 	PrepareBatchesForPass( &scene->shadowPass );
-	PrepareSceneIndirectDraw( app, &scene->opaquePass );
-	PrepareSceneIndirectDraw( app, &scene->shadowPass );
+	PrepareSceneIndirectDraw( app, &scene->opaquePass, true );
+	PrepareSceneIndirectDraw( app, &scene->shadowPass, true );
 	
 	// Finish upload
 	app->uploadCommandList->Close();
