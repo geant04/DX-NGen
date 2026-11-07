@@ -8,7 +8,7 @@ cbuffer CameraConstants : register(b0)
 StructuredBuffer<TransformData> transforms : register(t0, space1);
 
 #if !SHADOW_PASS
-StructuredBuffer<int> transformIndexOffsets : register(t1, space1);
+StructuredBuffer<uint> transformIndexOffsets : register(t1, space1);
 #endif
 
 struct VSInput
@@ -32,13 +32,11 @@ VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 	VSOutput output;
 	
 	bool isLimitCulled = false;
-	int indexOffset = instanceId;
+	uint indexOffset = instanceId;
 #if !SHADOW_PASS
-	uint packed = (uint) transformIndexOffsets[instanceId];
+	uint packed = transformIndexOffsets[instanceId];
 	isLimitCulled = ( packed >> 31 ) != 0;
 	indexOffset = packed & 0x7FFFFFFF;
-	
-
 #endif
 	TransformData transform = transforms[indexOffset];
 	
@@ -50,7 +48,7 @@ VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 	output.normal = input.normal;
 	output.uv = input.uv;
 	output.lightPosition = mul( data.lightViewProj, worldPosition );
-	output.limitCulled = isLimitCulled ? 1u : 0u;
+	output.limitCulled = indexOffset;
 	
 	return output;
 }

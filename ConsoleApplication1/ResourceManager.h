@@ -112,12 +112,13 @@ namespace Gfx
 	struct ResourceBuffer
 	{
 		ResourceBuffer()
-			: buffer( size )
+			: buffer( size ), maxSize( size )
 		{
 		}
 
 		std::vector<T> buffer;
 		int count = 0;
+		int maxSize = 0;
 	};
 
 	struct RenderableObject
@@ -125,6 +126,7 @@ namespace Gfx
 		Transform transform = {};
 		Mesh* mesh;
 		uint32_t materialId = 0;
+		uint32_t globalIdx = 0;
 		bool isShadowCaster = false;
 	};
 
@@ -255,6 +257,9 @@ namespace Gfx
 	template<typename T, int size>
 	T* AddToResourceBuffer( ResourceBuffer<T, size>* resourceBuffer )
 	{
+		uint32_t globalIdx = resourceBuffer->count;
+		resourceBuffer->buffer[globalIdx].globalIdx = globalIdx;
+
 		return &resourceBuffer->buffer[resourceBuffer->count++];
 	}
 

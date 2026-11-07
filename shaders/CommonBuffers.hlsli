@@ -1,6 +1,8 @@
 #ifndef __COMMON_BUFFERS_HLSLI__
 #define __COMMON_BUFFERS_HLSLI__
 
+#define NULL_ID 0xFFFFFFFF
+
 struct CameraConstantsData
 {
 	float4x4 modelViewProj;

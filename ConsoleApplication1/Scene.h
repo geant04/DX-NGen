@@ -3,10 +3,13 @@
 #include "Common.h"
 #include "Model.h"
 #include "ResourceManager.h"
+#include "Camera.h"
 
 struct MinimalDXApp;
 
 #define MAX_BATCHES 100
+#define NULL_BATCH_ID 0xFFFFFFFFu
+#define DEBUG_BATCH_ID_VECTOR false
 
 struct IndirectBatch
 {
@@ -31,9 +34,12 @@ struct Pass
 	Gfx::Buffer* indirectCommandBuffer = nullptr;
 	ComPtr<ID3D12CommandSignature> commandSignature;
 
-	std::vector<int> batchIds = {};
+	std::vector<uint32_t> batchIds = {};
 	Gfx::Buffer* transformIndexOffsets = nullptr;
 	Gfx::Buffer* transformBatchIds = nullptr;
+
+	// View information
+	Camera* camera;
 };
 
 struct Scene

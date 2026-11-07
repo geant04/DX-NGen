@@ -2,7 +2,7 @@
 
 StructuredBuffer<TransformData> transforms : register(t0, space1);
 StructuredBuffer<uint> transformBatchIds : register(t1, space1);
-RWStructuredBuffer<int> transformIndexOffsets : register(u0, space1);
+RWStructuredBuffer<uint> transformIndexOffsets : register(u0, space1);
 RWStructuredBuffer<IndirectCommand> indirectDrawArgs : register(u1, space1);
 
 cbuffer CameraConstants : register(b0)
@@ -12,6 +12,11 @@ cbuffer CameraConstants : register(b0)
 
 #define CS_CULL_WIDTH 64
 
+// TODO: NEED A SEPARATE SOLUTION FOR SHADOW CULLING, WHICH SHOULD RELY ON ALREADY CULLED DATA.
+// The problem is: how do we actually identify whether or not a given transform is culled?
+// I suppose a start is to map 1 thread per transform, then derive the indices of each transform in indirectDrawArgs,
+// and then repopulate indirectDrawArgs in the shadow... at that point, shadow should just have its own cull? or we add a param to
+// read from an existing drawArgs buffer that stores instance counts? Maybe we don't worry about this for now.
 
 bool IsInFrustum( in float4x4 viewProj, in TransformData transform, out uint isLimitedCulled )
 {
@@ -42,7 +47,7 @@ void main( uint3 dtid : SV_DispatchThreadID )
 	// There's not really an easy way to ignore dtid if we're out of bounds I think. I need to somehow pass in the # of transforms in
 	uint transformId = dtid.x;
 	
-	if ( transformId >= data.numTransforms )
+	if ( transformId >= data.numTransforms || transformBatchIds[transformId] == NULL_ID )
 	{
 		return;
 	}
@@ -63,6 +68,6 @@ void main( uint3 dtid : SV_DispatchThreadID )
 		// in the vert shader, acquire index by (index & 0x0FFFFFF) or something
 		uint index = transformId;
 		index |= (isLimitCulled << 31);
-		transformIndexOffsets[indirectDrawArgs[batchId].startInstanceLocation + writeIndex] = (int) index;
+		transformIndexOffsets[indirectDrawArgs[batchId].startInstanceLocation + writeIndex] = index;
 	}
 }

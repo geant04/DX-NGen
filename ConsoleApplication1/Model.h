@@ -2,6 +2,11 @@
 
 #include "Mesh.h"
 
+struct TransformGPU
+{
+	XMFLOAT4X4 model;
+};
+
 struct Transform
 {
 	XMFLOAT4X4 model;

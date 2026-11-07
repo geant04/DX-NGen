@@ -18,7 +18,7 @@ void BuildScene( MinimalDXApp* app )
 		sceneObjects.push_back(testCube);
 	}
 
-	const unsigned int numTestObjects = 1000000 - 2;
+	const unsigned int numTestObjects = ( resources.renderableObjects.maxSize - 2 > 0 ) ? resources.renderableObjects.maxSize - 2 : 0u;
 	std::mt19937 randomGenerator( 0xC0FFEEu );
 	std::uniform_real_distribution<float> positionDistribution( -250.0f, 250.0f );
 	std::uniform_real_distribution<float> positionYDistribution( -1.0f, 2.0f );
@@ -46,6 +46,7 @@ void BuildScene( MinimalDXApp* app )
 	floor->mesh = resources.globalTestCubeMesh;
 	floor->transform.Scale( { 500.0f, 0.5f, 500.0f } );
 	floor->transform.Translate( { 0.0f, -0.75f, 0.0f } );
+	floor->isShadowCaster = false;
 	sceneObjects.push_back(floor);
 }
 
@@ -128,7 +129,7 @@ static void PreparePassObjects( Scene* scene, std::vector<Gfx::RenderableObject*
 	}
 }
 
-static void PrepareBatchesForPass( Pass* pass )
+static void PrepareBatchesForPass( Scene* scene, Pass* pass )
 {
 	// For this paradigm to work, you need to upload all the transform data to the GPU upfront...
 	// This way, then, to draw Obj0 and Obj1 in batch 0 (count 2), you'd access by batchBaseIdx + objId, where objId < count
@@ -136,8 +137,14 @@ static void PrepareBatchesForPass( Pass* pass )
 	batchCount = 0;
 
 	// This assumes that meshes and materials are already pre-sorted.
-	// This also assumes that # objects == # of transforms, which... I don't even think is true.
-	// But we'll just roll with this for simplicity's sake because I want to see this work.
+	pass->batchIds.resize( scene->transforms.size(), NULL_BATCH_ID );
+
+	bool isSpecialDebugCase = false;
+	if ( pass->objects.size() != scene->transforms.size() )
+	{
+		isSpecialDebugCase = true;
+	}
+
 	for ( unsigned int i = 0; i < pass->objects.size(); i++ )
 	{
 		Gfx::RenderableObject* obj = pass->objects[i];
@@ -166,7 +173,17 @@ static void PrepareBatchesForPass( Pass* pass )
 			pass->batches[pass->batchCount - 1].count++;
 		}
 
-		pass->batchIds.push_back( batchCount - 1 );
+		pass->batchIds[obj->globalIdx] = ( batchCount - 1 );
+	}
+
+	if constexpr ( DEBUG_BATCH_ID_VECTOR )
+	{
+		std::cout << "DEBUG: Output batchId array passed to the scene cull CS shader: ";
+		for ( int i = 0; i < pass->batchIds.size(); i++ )
+		{
+			std::cout << pass->batchIds[i] << " ";
+		}
+		std::cout << std::endl;
 	}
 }
 
@@ -186,11 +203,11 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShad
 
 	app->device->CreateCommandSignature( &commandSignatureDesc, nullptr, IID_PPV_ARGS( &pass->commandSignature ) );
 
-	for ( int batchIdx = 0; batchIdx < pass->batchCount; batchIdx++ )
+	for ( unsigned int batchIdx = 0; batchIdx < pass->batchCount; batchIdx++ )
 	{
 		IndirectBatch* batch = &pass->batches[batchIdx];
 
-		commands[batchIdx].drawArgs.InstanceCount = isShadow ? batch->count : 0; // Instance count is populated during CS_Cull
+		commands[batchIdx].drawArgs.InstanceCount = 0; // Instance count is populated during CS_Cull
 		commands[batchIdx].drawArgs.StartInstanceLocation = batch->first;
 		commands[batchIdx].drawArgs.StartVertexLocation = batch->mesh->vertexOffset;
 		commands[batchIdx].drawArgs.VertexCountPerInstance = batch->mesh->vertexCount;
@@ -198,7 +215,7 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShad
 
 	if ( commands.empty() )
 	{
-		std::cout << "Empty commands!" << std::endl;
+		std::cout << "Empty commands! Most likely because of 0 batch count." << std::endl;
 		return;
 	}
 
@@ -222,19 +239,23 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShad
 	// This works such that: offsetIdx[0, 1, 2, 4, ... ]
 	// Then, access by transforms[offsetIdx[instanceId]]; to get the transform matrix
 	// This assumes that everything is properly sorted. and that my logic works. Woop.
-	// I'm also making this index buffer store the transformBatchIds first, since I don't have a good way of separating
-	// the batchIds from the pass. Hopefully this works.
+	if ( app->scene.transformCount != pass->batchIds.size() )
+	{
+		std::cout << "ERROR: global transform count != pass's batchID vector size! This won't map properly." << std::endl;
+		return;
+	}
+
 	const unsigned int numTransforms = app->scene.transformCount;
 	Gfx::Buffer*& transformIndexOffsets = pass->transformIndexOffsets;
 	Gfx::Buffer*& transformBatchIds = pass->transformBatchIds;
 	transformIndexOffsets = Gfx::AddBuffer( &app->resources );
 	transformBatchIds = Gfx::AddBuffer( &app->resources );
 
-	Gfx::UploadBufferInfo<int> transformIndexBufferInfo = {};
+	Gfx::UploadBufferInfo<uint32_t> transformIndexBufferInfo = {};
 	transformIndexBufferInfo.buffer = transformIndexOffsets->resource;
 	transformIndexBufferInfo.bufferUpload = transformIndexOffsets->upload;
 	transformIndexBufferInfo.objects = &pass->batchIds[0];
-	transformIndexBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( int ) );
+	transformIndexBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( uint32_t ) );
 
 	Gfx::UploadBuffer( app, 
 		&transformIndexBufferInfo, 
@@ -243,15 +264,23 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShad
 	transformIndexOffsets->resource = transformIndexBufferInfo.buffer;
 	transformIndexOffsets->upload = transformIndexBufferInfo.bufferUpload;
 
-	Gfx::UploadBufferInfo<int> batchIdBufferInfo = {};
+	Gfx::UploadBufferInfo<uint32_t> batchIdBufferInfo = {};
 	batchIdBufferInfo.buffer = transformBatchIds->resource;
 	batchIdBufferInfo.bufferUpload = transformBatchIds->upload;
 	batchIdBufferInfo.objects = &pass->batchIds[0];
-	batchIdBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( int ) );
+	batchIdBufferInfo.objectBufferSize = static_cast<uint32_t>( numTransforms * sizeof( uint32_t ) );
 
 	Gfx::UploadBuffer( app, &batchIdBufferInfo, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE );
 	transformBatchIds->resource = batchIdBufferInfo.buffer;
 	transformBatchIds->upload = batchIdBufferInfo.bufferUpload;
+
+	if ( isShadow )
+	{
+		// We are also leaking resources, like horribly.
+		std::cout << "isShadow CULL HACK is enabled. We are doing this to get performant shadows" << std::endl;
+
+		pass->indirectCommandBuffer = app->scene.opaquePass.indirectCommandBuffer;
+	}
 }
 
 void PrepareScene( MinimalDXApp* app )
@@ -269,10 +298,16 @@ void PrepareScene( MinimalDXApp* app )
 	BuildScene( app );
 	UploadSceneMeshes( app, sceneObjects );
 	PreparePassObjects( scene, sceneObjects );
-	PrepareBatchesForPass( &scene->opaquePass );
-	PrepareBatchesForPass( &scene->shadowPass );
+	PrepareBatchesForPass( scene, &scene->opaquePass );
+	PrepareBatchesForPass( scene, &scene->shadowPass );
 	PrepareSceneIndirectDraw( app, &scene->opaquePass, false );
 	PrepareSceneIndirectDraw( app, &scene->shadowPass, true );
+
+	// Assign final pass details
+	{
+		scene->opaquePass.camera = &app->cameraData;
+		scene->shadowPass.camera = &app->shadowCameraData;
+	}
 	
 	// Finish upload
 	app->uploadCommandList->Close();

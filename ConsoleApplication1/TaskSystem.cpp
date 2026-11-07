@@ -259,6 +259,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
 			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
 		}
+		app->tasks.push_back( drawShadows );
 		app->tasks.push_back( drawOpaque );
 	}
 

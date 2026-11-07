@@ -453,37 +453,37 @@ void MinimalDXApp::Render()
 	}
 	else
 	{
-		for ( auto& task : shadowTasks )
-		{	
-			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
-			{
-				if ( !drawTask->constantBuffers.empty() && drawTask->constantBuffers[0]->isDynamic )
-				{
-					// update model matrix hack
-					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->constantBuffers[0]->cpuBufferData );
-					*cb = cameraConstants;	// camera position, frame number, etc.
-					
-					XMMATRIX model;
-					if ( drawTask->pass )
-					{
-						model = XMMatrixIdentity();
-						cb->numTransforms = drawTask->pass->batchIds.size();
-					}
-					else
-					{
-						model = XMLoadFloat4x4( &drawTask->model->transform.model );
-					}
+		//for ( auto& task : shadowTasks )
+		//{	
+		//	if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
+		//	{
+		//		if ( !drawTask->constantBuffers.empty() && drawTask->constantBuffers[0]->isDynamic )
+		//		{
+		//			// update model matrix hack
+		//			CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->constantBuffers[0]->cpuBufferData );
+		//			*cb = cameraConstants;	// camera position, frame number, etc.
+		//			
+		//			XMMATRIX model;
+		//			if ( drawTask->pass )
+		//			{
+		//				model = XMMatrixIdentity();
+		//				cb->numTransforms = drawTask->pass->batchIds.size();
+		//			}
+		//			else
+		//			{
+		//				model = XMLoadFloat4x4( &drawTask->model->transform.model );
+		//			}
 
-					const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
-					const XMMATRIX lightModelViewProj = model * lightViewProj;
-					const XMMATRIX lightViewProjInverse = ( XMMatrixInverse( nullptr, lightViewProj ) );
+		//			const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
+		//			const XMMATRIX lightModelViewProj = model * lightViewProj;
+		//			const XMMATRIX lightViewProjInverse = ( XMMatrixInverse( nullptr, lightViewProj ) );
 
-					XMStoreFloat4x4( &cb->modelViewProj, lightModelViewProj );
-					XMStoreFloat4x4( &cb->viewProjInverse,  lightViewProjInverse );
-				}
-			}
-			task->execute( commandList, commandAllocator, &resources );
-		}
+		//			XMStoreFloat4x4( &cb->modelViewProj, lightModelViewProj );
+		//			XMStoreFloat4x4( &cb->viewProjInverse,  lightViewProjInverse );
+		//		}
+		//	}
+		//	task->execute( commandList, commandAllocator, &resources );
+		//}
 		for ( auto& task : tasks )
 		{	
 			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
@@ -495,18 +495,22 @@ void MinimalDXApp::Render()
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
 					XMMATRIX model;
+					Camera* camera = &cameraData;
+
 					if ( drawTask->pass )
 					{
 						model = XMMatrixIdentity();
 						cb->numTransforms = drawTask->pass->batchIds.size();
+						camera = drawTask->pass->camera;
 					}
 					else
 					{
 						model = XMLoadFloat4x4( &drawTask->model->transform.model );
 					}
 
-					const XMMATRIX& viewProj = cameraData.viewProj;
+					const XMMATRIX& viewProj = camera->viewProj;
 					const XMMATRIX modelViewProj = model * viewProj;
+
 					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;
 					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
 

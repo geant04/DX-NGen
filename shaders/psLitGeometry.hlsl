@@ -79,11 +79,26 @@ float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
 	return shadow;
 }
 
+float3 IntToRandomColor(int seed)
+{
+	uint x = asuint(seed);
+	
+	x = ((x >> 16) ^ x) * 0x45d9f3b;
+	x = ((x >> 16) ^ x) * 0x45d9f3b;
+	x = (x >> 16) ^ x;
+	
+	float r = float(x & 0xFF) / 255.0;
+	float g = float((x >> 8) & 0xFF) / 255.0;
+	float b = float((x >> 16) & 0xFF) / 255.0;
+	
+	return float3(r, g, b);
+}
+
 float4 PSMain(PSInput input) : SV_TARGET
 {	
-	float shadow = input.limitCulled ? 0.0f : GetShadow( input.lightPosition, input.position.xy );
+	float shadow = GetShadow( input.lightPosition, input.position.xy );
 	
-	float3 outColor = input.limitCulled ? float3( 1.0f, 1.0f, 1.0f ) :0.25f;
+	float3 outColor = IntToRandomColor( input.limitCulled + 1 );
 	float3 normal = normalize( input.normal.rgb );
 	float3 sunDir = normalize( data.sunDirection.rgb );
 	
