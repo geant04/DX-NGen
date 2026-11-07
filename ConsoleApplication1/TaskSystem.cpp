@@ -8,6 +8,7 @@
 #include <windowsx.h>
 
 const bool testIndirectDraw = true;
+const bool disableSky = true;
 
 static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* inOutTexture, 
 	Gfx::Sampler* bilinearSamplerClamp, Gfx::RenderTarget* screenRenderTarget, Gfx::Buffer* cameraDataBuffer, 
@@ -142,9 +143,12 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 
 	{
 		// Geometry draw
-		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
 		app->tasks.push_back( SrvToRtv( screenTexture ) );
-		app->tasks.push_back( drawSky );
+		
+		if ( !disableSky )
+		{
+			app->tasks.push_back( drawSky );
+		}
 	}
 
 	// Indirect draws for our world-geometry
@@ -158,6 +162,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		Gfx::Buffer* transformIndexOffsetBuffer = app->scene.opaquePass.transformIndexOffsets;
 		Gfx::Buffer* indirectDrawArgsBuffer = app->scene.opaquePass.indirectCommandBuffer;
 		Gfx::Buffer* transformBatchIdsBuffer = app->scene.opaquePass.transformBatchIds;
+		Gfx::Buffer* scenePointLightsBuffer = app->scene.scenePointLights;
 		unsigned int numBatches = app->scene.opaquePass.commands.size();
 
 		// All of this below should not exist, they should've been built in Scene already, or something else
@@ -232,12 +237,13 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			drawOpaque->constantBuffers.push_back( cameraDataBuffer );
 			drawOpaque->readBuffers.push_back( transformBuffer );
 			drawOpaque->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawOpaque->readBuffers.push_back( scenePointLightsBuffer );
 			drawOpaque->readTextures.push_back( sunShadowMap );
 			drawOpaque->staticSamplers.push_back( bilinearSamplerClamp );
 			drawOpaque->staticSamplers.push_back( pcfShadowSampler );
 			drawOpaque->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
 			drawOpaque->initResources.pixelShaderName = "psLitGeometry.hlsl";
-			drawOpaque->clearRenderTarget = false;
+			drawOpaque->clearRenderTarget = disableSky;
 			drawOpaque->clearDepth = true;
 			drawOpaque->depthTest = true;
 			drawOpaque->outputToBackBuffer = false;
@@ -260,6 +266,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
 		}
 		app->tasks.push_back( drawShadows );
+		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
 		app->tasks.push_back( drawOpaque );
 	}
 
@@ -328,11 +335,11 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		outBuffer = screenTexture;
 	}
 	app->tasks.push_back( drawToScreen( app, outBuffer, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
-	if ( true )
+	if ( false )
 	{
 		app->tasks.push_back( drawDebugView );
-		app->tasks.push_back( SrvToDepth( sunShadowMap ) );
 	}
+	app->tasks.push_back( SrvToDepth( sunShadowMap ) );
 }
 
 void BuildTaskSystem( MinimalDXApp* app )

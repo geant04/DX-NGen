@@ -4,6 +4,7 @@ struct PSInput
 {
 	float4 position : SV_POSITION;
 	float4 lightPosition : COLOR0;
+	float4 worldPosition : COLOR1;
 	float3 normal : NORMAL;
 	float2 uv : TEXCOORD;
 	nointerpolation uint limitCulled : TEXCOORD1;
@@ -18,6 +19,11 @@ Texture2D shadowMap : register(t0);
 SamplerState texSampler : register(s0);
 SamplerComparisonState shadowSampler : register(s1);
 
+// t0, t1 binded in vsIndirectGeometry? I'm not sure how this works
+StructuredBuffer<PointLight> pointLights : register(t2, space1);
+
+#define RENDER_SHADOWS 0
+#define RENDER_FUN_RED_LIGHT_SCENE 0
 #define TEST_SIMPLE_BOX_TAP 1
 
 float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
@@ -79,30 +85,65 @@ float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
 	return shadow;
 }
 
-float3 IntToRandomColor(int seed)
+float3 IntToRandomColor( int seed )
 {
-	uint x = asuint(seed);
+	uint x = asuint( seed );
 	
-	x = ((x >> 16) ^ x) * 0x45d9f3b;
-	x = ((x >> 16) ^ x) * 0x45d9f3b;
-	x = (x >> 16) ^ x;
+	x = ( ( x >> 16 ) ^ x ) * 0x45d9f3b;
+	x = ( ( x >> 16 ) ^ x ) * 0x45d9f3b;
+	x = ( x >> 16 ) ^ x;
 	
-	float r = float(x & 0xFF) / 255.0;
-	float g = float((x >> 8) & 0xFF) / 255.0;
-	float b = float((x >> 16) & 0xFF) / 255.0;
+	float r = float( x & 0xFF ) / 255.0;
+	float g = float( ( x >> 8 ) & 0xFF ) / 255.0;
+	float b = float( ( x >> 16 ) & 0xFF ) / 255.0;
 	
-	return float3(r, g, b);
+	return float3( r, g, b );
 }
 
-float4 PSMain(PSInput input) : SV_TARGET
+float4 PSMain( PSInput input ) : SV_TARGET
 {	
-	float shadow = GetShadow( input.lightPosition, input.position.xy );
-	
-	float3 outColor = IntToRandomColor( input.limitCulled + 1 );
+	float3 outColor = 0.0f;
+	float3 albedo = lerp( IntToRandomColor( input.limitCulled + 1 ), 1.0f,  0.8f );
 	float3 normal = normalize( input.normal.rgb );
-	float3 sunDir = normalize( data.sunDirection.rgb );
 	
-	outColor *= ( max( dot( normal, -sunDir ), 0.0f ) * ( 1.0f - shadow + 0.25f ) );
+#if RENDER_SHADOWS
+	float shadow = GetShadow( input.lightPosition, input.position.xy );
+	float3 sunDir = normalize( data.sunDirection.rgb );
+	float sunLightLambert =  max( dot( normal, normalize( -sunDir ) ), 0.0f ) 
+
+	outColor *= sunLightLambert * ( 1.0f - shadow + 0.25f ) );
+#endif
+	
+#if RENDER_FUN_RED_LIGHT_SCENE
+	// Will replace this with the actual pointLight calculation
+	Light defaultTestLight;
+	defaultTestLight.worldPosition = float3( 0.0f, 6.0f, 0.0f );
+	defaultTestLight.squaredRadius = 40.0f;
+	defaultTestLight.color = float3( 1.0f, 0.0f, 0.0f );
+	
+	float3 worldPosToLightPos = defaultTestLight.worldPosition - input.worldPosition.xyz;
+	float distToLight = max( dot( worldPosToLightPos, worldPosToLightPos ), 0.0001f );
+	float pointLightLambert = max( dot( normal, normalize( worldPosToLightPos ) ), 0.0f );
+	
+	outColor *= lerp( pointLightLambert, 1.0f, 0.5f );
+	outColor *= ( defaultTestLight.color ) * ( defaultTestLight.squaredRadius / distToLight );
+#endif
+#if 1
+	uint numPointLights = data.numPointLights;
+	
+	for ( uint i = 0; i < numPointLights; i++ )
+	{
+		PointLight pointLight = pointLights[i];
+		
+		float3 worldPosToLightPos = pointLight.worldPosition - input.worldPosition.xyz;
+		float distToLight = max( dot( worldPosToLightPos, worldPosToLightPos ), 0.0001f );
+		float pointLightLambert = max( dot( normal, normalize( worldPosToLightPos ) ), 0.0f );
+	
+		float3 radiance = albedo * lerp( pointLightLambert, 1.0f, 0.5f );
+		radiance *= ( pointLight.color ) * ( pointLight.squaredRadius / distToLight );
+		outColor += radiance;
+	}
+#endif
 	
 	return float4( outColor, 1.0f );
 }

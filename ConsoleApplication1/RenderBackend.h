@@ -77,6 +77,27 @@ namespace Gfx
 		app->uploadCommandList->ResourceBarrier(1, &barrier);
 	}
 
+	template<typename T>
+	void UploadBuffer( MinimalDXApp* app, 
+		Gfx::Buffer* buffer, 
+		std::vector<T>* data,
+		D3D12_RESOURCE_STATES finalState, 
+		D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE )
+	{
+		Gfx::UploadBufferInfo<T> bufferInfo = {};
+		bufferInfo.buffer = buffer->resource;
+		bufferInfo.bufferUpload = buffer->upload;
+		bufferInfo.objects = &data->at(0);
+		bufferInfo.objectBufferSize = static_cast<uint32_t>( data->size() * sizeof( T ) );
+
+		Gfx::UploadBuffer( app, 
+			&bufferInfo, 
+			finalState, 
+			resourceFlags );
+
+		buffer->resource = bufferInfo.buffer;
+		buffer->upload = bufferInfo.bufferUpload;
+	}
 
 	void UploadMeshBuffer( MinimalDXApp* app, UploadMeshBufferInfo* info );
 

@@ -49,6 +49,8 @@ struct Scene
 	Pass opaquePass = {};
 	Pass shadowPass = {};
 
+	Gfx::Buffer* scenePointLights;
+
 	// Global stuffs
 	ComPtr<ID3D12Resource> vertexBuffer = nullptr;
 	ComPtr<ID3D12Resource> vertexBufferUpload = nullptr;

@@ -15,6 +15,7 @@ struct CameraConstantsData
 	float invScreenWidth;
 	float invScreenHeight;
 	uint numTransforms;
+	uint numPointLights;
 };
 
 struct TransformData
@@ -31,6 +32,14 @@ struct IndirectCommand
 	uint instanceCount;
 	uint startVertexLocation;
 	uint startInstanceLocation;
+};
+
+struct PointLight
+{
+	float3 worldPosition;
+	float squaredRadius;
+	float3 color;
+	uint globalIdx;
 };
 
 #endif // #ifndef __COMMON_BUFFERS_HLSLI__

@@ -207,9 +207,9 @@ namespace Gfx
 		D3D12_CLEAR_VALUE clearValue = {};
 		clearValue.Format = format;
 		clearValue.Color[0] = 0.0f;
-		clearValue.Color[1] = 0.2f;
-		clearValue.Color[2] = 0.4f;
-		clearValue.Color[3] = 1.0f;
+		clearValue.Color[1] = 0.0f;
+		clearValue.Color[2] = 0.0f;
+		clearValue.Color[3] = 0.0f;
 
 		// Temporarily stage memory CPU/GPU
 		CD3DX12_HEAP_PROPERTIES defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);

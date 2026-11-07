@@ -130,6 +130,16 @@ namespace Gfx
 		bool isShadowCaster = false;
 	};
 
+	struct PointLight
+	{
+		XMFLOAT3 worldPosition = {};
+		float squaredRadius = 0.0f;
+		XMFLOAT3 color = {};
+		uint32_t globalIdx = 0; 
+		// globalIdx could be inherited from a Resource struct of some sort
+		// globalIdx is required to exist as a member var becausee of our AddToResourceBuffer funcs
+	};
+
 	struct Resources
 	{
 		GlobalDescriptorHeaps globalDescriptorHeap;
@@ -187,14 +197,18 @@ namespace Gfx
 		Texture swapChainTextures[SWAPCHAIN_COUNT];
 		Texture* swapChainOutputTexture;
 		
+		// TODO: Move these resources to the heap via my template solution
 		RenderTarget renderTargets[10];
 		Texture textures[100];
 		Buffer buffers[100];
 		Sampler samplers[100];
-		// RenderableObject renderableObjects[100];
 		Model models[10];
 		Mesh meshes[10];
+
+		// It's probably worth adding some "scene-loading" feature at some point,
+		// but if you want the true shabang, render: 2000000# of renderableObjects
 		ResourceBuffer<RenderableObject, 1000000> renderableObjects;
+		ResourceBuffer<PointLight, 10> pointLights;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;

@@ -13,7 +13,8 @@ struct CameraConstants {
 	float invScreenWidth;
 	float invScreenHeight;
 	uint32_t numTransforms; // not a good solution for now
-	uint32_t padding[3];
+	uint32_t numLights; // not a good solution for now
+	uint32_t padding[2];
 };
 
 

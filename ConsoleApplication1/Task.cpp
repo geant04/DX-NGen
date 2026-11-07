@@ -108,7 +108,7 @@ void DrawTask::execute(
 
 	if ( clearRenderTarget )
 	{
-		FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+		FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 		if ( outputToBackBuffer )
 		{
 			commandList->ClearRenderTargetView( *rtvHandlePtr, clearColor, 0, nullptr);

@@ -8,6 +8,15 @@ void BuildScene( MinimalDXApp* app )
 	std::vector<Gfx::RenderableObject*>& sceneObjects = app->scene.sceneObjects;
 	Gfx::Resources& resources = app->resources;
 
+	sceneObjects.reserve( resources.renderableObjects.maxSize );
+
+	Gfx::RenderableObject* floor = Gfx::AddToResourceBuffer( &resources.renderableObjects );
+	floor->mesh = resources.globalTestCubeMesh;
+	floor->transform.Scale( { 500.0f, 0.5f, 500.0f } );
+	floor->transform.Translate( { 0.0f, -0.75f, 0.0f } );
+	floor->isShadowCaster = false;
+	sceneObjects.push_back(floor);
+
 	Gfx::RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 
 	{
@@ -41,13 +50,6 @@ void BuildScene( MinimalDXApp* app )
 		testCube->isShadowCaster = true;
 		sceneObjects.push_back(testCube);
 	}
-
-	Gfx::RenderableObject* floor = Gfx::AddToResourceBuffer( &resources.renderableObjects );
-	floor->mesh = resources.globalTestCubeMesh;
-	floor->transform.Scale( { 500.0f, 0.5f, 500.0f } );
-	floor->transform.Translate( { 0.0f, -0.75f, 0.0f } );
-	floor->isShadowCaster = false;
-	sceneObjects.push_back(floor);
 }
 
 void UploadSceneMeshes( MinimalDXApp* app, std::vector<Gfx::RenderableObject*>& sceneObjects )
@@ -283,6 +285,51 @@ static void PrepareSceneIndirectDraw( MinimalDXApp* app, Pass* pass, bool isShad
 	}
 }
 
+static void PrepareScenePointLights( MinimalDXApp* app )
+{
+	Gfx::Resources& resources = app->resources;
+
+	auto& pointLights = app->resources.pointLights;
+	unsigned int numLights = pointLights.maxSize;
+
+	std::mt19937 randomGenerator( 0xC0FFEEu );
+	std::uniform_real_distribution<float> positionDistribution( -30.0f, 30.0f );
+	std::uniform_real_distribution<float> positionYDistribution( 0.0f, 10.0f );
+	const float squaredRadius = 40.0f;
+
+	for ( unsigned int i = 0; i < numLights; i++ )
+	{
+		float randomXPos = positionDistribution( randomGenerator );
+		float randomYPos = positionYDistribution( randomGenerator );
+		float randomZPos = positionDistribution( randomGenerator );
+
+		float normalizedR = ( ( randomXPos / 40.0f ) + 1.0f ) * 0.5f;
+		float normalizedG = ( ( randomZPos / 40.0f ) + 1.0f ) * 0.5f;
+		float normalizedB = ( ( abs(randomYPos) / 30.0f ) );
+
+		Gfx::PointLight* pointLight = Gfx::AddToResourceBuffer( &resources.pointLights );
+		XMStoreFloat3( &pointLight->worldPosition, { randomXPos, randomYPos, randomZPos } );
+		XMStoreFloat3( &pointLight->color, { normalizedR, normalizedG, normalizedB } );
+		pointLight->squaredRadius = squaredRadius;
+	}
+	
+	// TODO: if this upload buffer function works, then it's worth replacing previous upload calls with
+	// this dramatically abstracted/simpler function definition
+	Gfx::Buffer*& scenePointLights = app->scene.scenePointLights;
+	scenePointLights = Gfx::AddBuffer( &resources );
+	Gfx::UploadBuffer( 
+		app, 
+		scenePointLights, 
+		&resources.pointLights.buffer, 
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE );
+	
+	scenePointLights->numElements = resources.pointLights.count;
+	scenePointLights->structuredByteStride = sizeof( Gfx::PointLight );
+	scenePointLights->isDynamic = false;
+	Gfx::CreateSRVBuffer( app->device, scenePointLights, &resources );
+}
+
+
 void PrepareScene( MinimalDXApp* app )
 {
 	// Ultimate goal is to have just one dedicated draw call for everything in the scene
@@ -308,6 +355,8 @@ void PrepareScene( MinimalDXApp* app )
 		scene->opaquePass.camera = &app->cameraData;
 		scene->shadowPass.camera = &app->shadowCameraData;
 	}
+
+	PrepareScenePointLights( app );
 	
 	// Finish upload
 	app->uploadCommandList->Close();

@@ -501,6 +501,7 @@ void MinimalDXApp::Render()
 					{
 						model = XMMatrixIdentity();
 						cb->numTransforms = drawTask->pass->batchIds.size();
+						cb->numLights = resources.pointLights.count;
 						camera = drawTask->pass->camera;
 					}
 					else
