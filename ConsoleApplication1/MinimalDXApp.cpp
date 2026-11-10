@@ -393,6 +393,8 @@ void MinimalDXApp::ProcessGameState()
 		const XMVECTOR& up  = XMLoadFloat4( &cameraData.up );
 		XMMATRIX view = XMMatrixLookAtLH( eye, at, up );
 		XMMATRIX projection = XMMatrixPerspectiveFovLH( fovY, aspectRatio, nearZ, farZ );
+		cameraData.view = view;
+		cameraData.proj = projection;
 		cameraData.viewProj = view * projection;
 
 		cameraConstants.resetPathTracer = resetPathTracer;
@@ -502,6 +504,12 @@ void MinimalDXApp::Render()
 						model = XMMatrixIdentity();
 						cb->numTransforms = drawTask->pass->batchIds.size();
 						cb->numLights = resources.pointLights.count;
+						
+						XMStoreUInt3( &cb->clusterDims, { 
+							static_cast<float>( scene.clusterParams.numClustersX ), 
+							static_cast<float>( scene.clusterParams.numClustersY ), 
+							1 } );
+
 						camera = drawTask->pass->camera;
 					}
 					else
@@ -514,10 +522,13 @@ void MinimalDXApp::Render()
 
 					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;
 					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
+					const XMMATRIX projInverse = XMMatrixInverse( nullptr, camera->proj );
 
 					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
 					XMStoreFloat4x4( &cb->viewProjInverse, viewProjInverse );
 					XMStoreFloat4x4( &cb->lightViewProj, lightModelViewProj );
+					XMStoreFloat4x4( &cb->projInverse, projInverse );
+					XMStoreFloat4x4( &cb->view, camera->view );
 					XMStoreFloat3( &cb->sunDirection, sunDirection );
 				}
 			}

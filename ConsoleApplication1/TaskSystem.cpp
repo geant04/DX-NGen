@@ -163,6 +163,8 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		Gfx::Buffer* indirectDrawArgsBuffer = app->scene.opaquePass.indirectCommandBuffer;
 		Gfx::Buffer* transformBatchIdsBuffer = app->scene.opaquePass.transformBatchIds;
 		Gfx::Buffer* scenePointLightsBuffer = app->scene.scenePointLights;
+		Gfx::Buffer* sceneClustersBuffer = app->scene.pointLightClusters;
+		Gfx::Buffer* debugBboxBuffer = app->scene.debugBboxClusters;
 		unsigned int numBatches = app->scene.opaquePass.commands.size();
 
 		// All of this below should not exist, they should've been built in Scene already, or something else
@@ -230,6 +232,27 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			return;
 		}
 
+		std::shared_ptr<ComputeTask> clusterPointLights = std::make_shared<ComputeTask>();
+		{
+			clusterPointLights->readBuffers.push_back( scenePointLightsBuffer );
+			clusterPointLights->constantBuffers.push_back( cameraDataBuffer );
+			clusterPointLights->writeBuffers.push_back( sceneClustersBuffer );
+			clusterPointLights->writeBuffers.push_back( debugBboxBuffer );
+
+			const ClusterParams clusterParams = app->scene.clusterParams;
+
+			clusterPointLights->initResources.csAssetName = "csCluster.hlsl";
+			clusterPointLights->initResources.entryPoint = "cs_main";
+			clusterPointLights->initResources.dispatchWidth = ( clusterParams.numClustersX + 15 ) / 16;
+			clusterPointLights->initResources.dispatchHeight = ( clusterParams.numClustersY + 7 ) / 8;;
+			clusterPointLights->initResources.dispatchDepth = ( clusterParams.numClustersZ + 1 ) / 2;;
+		}
+
+		if ( !Gfx::CreateComputeTask( app, clusterPointLights.get() ) )
+		{
+			return;
+		}
+
 		
 		std::shared_ptr<DrawTask> drawOpaque = std::make_shared<DrawTask>();
 		{
@@ -238,6 +261,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			drawOpaque->readBuffers.push_back( transformBuffer );
 			drawOpaque->readBuffers.push_back( transformIndexOffsetBuffer );
 			drawOpaque->readBuffers.push_back( scenePointLightsBuffer );
+			drawOpaque->readBuffers.push_back( sceneClustersBuffer );
 			drawOpaque->readTextures.push_back( sunShadowMap );
 			drawOpaque->staticSamplers.push_back( bilinearSamplerClamp );
 			drawOpaque->staticSamplers.push_back( pcfShadowSampler );
@@ -255,6 +279,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			return;
 		}
 
+		// Culling
 		{
 			app->tasks.push_back( SrvToUav( transformIndexOffsetBuffer ) );
 			app->tasks.push_back( IndirectToUav( indirectDrawArgsBuffer ) );
@@ -264,6 +289,13 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( drawOpaqueCull );
 			app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
 			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
+		}
+		// Light cluster gathering
+		if ( true )
+		{
+			app->tasks.push_back( SrvToUav( sceneClustersBuffer ) );
+			app->tasks.push_back( clusterPointLights );
+			app->tasks.push_back( UavToSrv( sceneClustersBuffer ) );
 		}
 		app->tasks.push_back( drawShadows );
 		app->tasks.push_back( DepthToSrv( sunShadowMap ) );

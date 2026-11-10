@@ -42,6 +42,14 @@ struct Pass
 	Camera* camera;
 };
 
+struct ClusterParams
+{
+	uint32_t numClustersX = 16;
+	uint32_t numClustersY = 8;
+	uint32_t numClustersZ = 8;
+	uint32_t totalClusters = 0;
+};
+
 struct Scene
 {
 	std::vector<Gfx::RenderableObject*> sceneObjects = {};
@@ -67,6 +75,10 @@ struct Scene
 	std::vector<Transform> transforms = {};
 	uint32_t transformCount = 0;
 	uint32_t transformBufferSize = 0;
+
+	ClusterParams clusterParams = {};
+	Gfx::Buffer* pointLightClusters;
+	Gfx::Buffer* debugBboxClusters;
 };
 
 void BuildScene( MinimalDXApp* app );

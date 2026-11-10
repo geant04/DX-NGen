@@ -280,5 +280,5 @@ void ComputeTask::execute(
 		}
 	}
 
-	commandList->Dispatch( initResources.dispatchWidth, initResources.dispatchHeight, 1 );
+	commandList->Dispatch( initResources.dispatchWidth, initResources.dispatchHeight, initResources.dispatchDepth );
 }

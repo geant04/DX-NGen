@@ -28,6 +28,8 @@ struct VSOutput
 	nointerpolation uint limitCulled : TEXCOORD1;
 };
 
+#define ENABLE_FUNNY_WAVE_DEMO 0
+
 VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 {
 	VSOutput output;
@@ -41,8 +43,16 @@ VSOutput VSMain( VSInput input, uint instanceId : SV_InstanceID )
 #endif
 	TransformData transform = transforms[indexOffset];
 	
-	float3 funOffset = min( float(indexOffset), 1.0f ) * float3( 0.0f, sin( float(data.frameNumber + indexOffset) * 0.01f ), 0.0f );
-	float4 worldPosition = mul( transform.model, float4( input.position.xyz + funOffset, 1.0f ) );
+	
+	float4 worldPosition = mul( transform.model, float4( input.position.xyz + 0.0f, 1.0f ) );
+
+#if ENABLE_FUNNY_WAVE_DEMO
+	float4 worldCentroidPosition = mul( transform.model, float4( 0.0f, 0.0f, 0.0f, 1.0f ) );
+	float funOffset = min( float(indexOffset), 1.0f ) * sin( float(data.frameNumber + indexOffset) * 0.6f );
+	float funOffset2 = 2.5f * min( float(indexOffset), 1.0f ) * sin( 0.2f * float( data.frameNumber * 0.1f ) + 0.1f * worldCentroidPosition.x ) + 1.25f;
+	funOffset2 += 0.1f * funOffset;
+	worldPosition.y += funOffset2;
+#endif
 	
 	// Did a bit of a hack so that in this indirect call, "modelViewProj" actually just
 	// stores the viewProj matrix, so we have to do a bit of extra matrix math here on the GPU...

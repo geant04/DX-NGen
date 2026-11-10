@@ -6,6 +6,8 @@ struct CameraConstants {
 	XMFLOAT4X4 modelViewProj;
 	XMFLOAT4X4 viewProjInverse;
 	XMFLOAT4X4 lightViewProj;
+	XMFLOAT4X4 projInverse;
+	XMFLOAT4X4 view;
 	XMFLOAT4 cameraPosition;
 	XMFLOAT3 sunDirection;
 	uint32_t frameNumber;
@@ -14,13 +16,16 @@ struct CameraConstants {
 	float invScreenHeight;
 	uint32_t numTransforms; // not a good solution for now
 	uint32_t numLights; // not a good solution for now
-	uint32_t padding[2];
+	XMUINT3 clusterDims; //  not a good solution for now
+	uint32_t padding[1];
 };
 
 
 struct Camera
 {
 	XMMATRIX viewProj;
+	XMMATRIX view;
+	XMMATRIX proj;
 	XMVECTOR initialDirection = XMVector4Normalize( XMVectorSet( 0.0f, 2.0f, -10.0f, 1.0f ) );
 	XMFLOAT4 eye = { 0.0f, 0.0f, 0.0f, 0.0f };
 	XMFLOAT4 at = { 0.0f, 1.0f, 0.0f, 1.0f };

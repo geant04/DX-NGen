@@ -126,8 +126,9 @@ struct InitResources
 {
 	const char* csAssetName;
 	const char* entryPoint;
-	uint32_t dispatchWidth;
-	uint32_t dispatchHeight;
+	uint32_t dispatchWidth = 8;
+	uint32_t dispatchHeight = 8;
+	uint32_t dispatchDepth = 1;
 };
 
 public:

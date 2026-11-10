@@ -293,9 +293,13 @@ static void PrepareScenePointLights( MinimalDXApp* app )
 	unsigned int numLights = pointLights.maxSize;
 
 	std::mt19937 randomGenerator( 0xC0FFEEu );
-	std::uniform_real_distribution<float> positionDistribution( -30.0f, 30.0f );
-	std::uniform_real_distribution<float> positionYDistribution( 0.0f, 10.0f );
-	const float squaredRadius = 40.0f;
+
+	float halfScaleX = 100.0f;
+	float yMax = 10.0f;
+
+	std::uniform_real_distribution<float> positionDistribution( -halfScaleX, halfScaleX );
+	std::uniform_real_distribution<float> positionYDistribution( 0.0f, yMax );
+	const float squaredRadius = 400.0f;
 
 	for ( unsigned int i = 0; i < numLights; i++ )
 	{
@@ -303,9 +307,13 @@ static void PrepareScenePointLights( MinimalDXApp* app )
 		float randomYPos = positionYDistribution( randomGenerator );
 		float randomZPos = positionDistribution( randomGenerator );
 
-		float normalizedR = ( ( randomXPos / 40.0f ) + 1.0f ) * 0.5f;
-		float normalizedG = ( ( randomZPos / 40.0f ) + 1.0f ) * 0.5f;
-		float normalizedB = ( ( abs(randomYPos) / 30.0f ) );
+		float randomR = positionDistribution( randomGenerator );
+		float randomG = positionDistribution( randomGenerator );
+		float randomB = positionDistribution( randomGenerator );
+
+		float normalizedR = 1.0f * ( ( randomR / halfScaleX ) + 1.0f ) * 0.5f;
+		float normalizedG = 1.0f * ( ( randomG / halfScaleX ) + 1.0f ) * 0.5f;
+		float normalizedB = 1.0f * ( ( randomB / halfScaleX ) + 1.0f ) * 0.5f;
 
 		Gfx::PointLight* pointLight = Gfx::AddToResourceBuffer( &resources.pointLights );
 		XMStoreFloat3( &pointLight->worldPosition, { randomXPos, randomYPos, randomZPos } );
@@ -327,6 +335,58 @@ static void PrepareScenePointLights( MinimalDXApp* app )
 	scenePointLights->structuredByteStride = sizeof( Gfx::PointLight );
 	scenePointLights->isDynamic = false;
 	Gfx::CreateSRVBuffer( app->device, scenePointLights, &resources );
+}
+
+static void PreparePointLightClusters( MinimalDXApp* app )
+{
+	ClusterParams& clusterParams = app->scene.clusterParams;
+
+	uint32_t totalClusters = clusterParams.numClustersX * clusterParams.numClustersY * clusterParams.numClustersZ;
+	if ( totalClusters > CLUSTERS_LIMIT )
+	{
+		std::cout << "ERROR: EXCEEDED TOTAL CLUSTERS" << std::endl;
+		return;
+	}
+
+	clusterParams.totalClusters = totalClusters;
+
+	Gfx::Resources& resources = app->resources;
+	for ( unsigned int i = 0; i < totalClusters; i++ )
+	{
+		Gfx::Cluster* cluster = Gfx::AddToResourceBuffer( &resources.pointLightClusters );
+		cluster->numLights = i;
+
+		Gfx::ClusterBBOX* bbox = Gfx::AddToResourceBuffer( &resources.debugClusterBBOX );
+	}
+
+	Gfx::Buffer*& pointLightClusters = app->scene.pointLightClusters;
+	pointLightClusters = Gfx::AddBuffer( &resources );
+	Gfx::UploadBuffer( 
+		app, 
+		pointLightClusters, 
+		&resources.pointLightClusters.buffer, 
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	
+	pointLightClusters->numElements = totalClusters;
+	pointLightClusters->structuredByteStride = sizeof( Gfx::Cluster );
+	pointLightClusters->isDynamic = false;
+	Gfx::CreateSRVBuffer( app->device, pointLightClusters, &resources );
+	Gfx::CreateUAVBuffer( app->device, pointLightClusters, &resources );
+
+	Gfx::Buffer*& debugClusterBBOX = app->scene.debugBboxClusters;
+	debugClusterBBOX = Gfx::AddBuffer( &resources );
+	Gfx::UploadBuffer( 
+		app, 
+		debugClusterBBOX, 
+		&resources.debugClusterBBOX.buffer, 
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	
+	debugClusterBBOX->numElements = totalClusters;
+	debugClusterBBOX->structuredByteStride = sizeof( Gfx::ClusterBBOX );
+	debugClusterBBOX->isDynamic = false;
+	Gfx::CreateUAVBuffer( app->device, debugClusterBBOX, &resources );
 }
 
 
@@ -357,6 +417,7 @@ void PrepareScene( MinimalDXApp* app )
 	}
 
 	PrepareScenePointLights( app );
+	PreparePointLightClusters( app );
 	
 	// Finish upload
 	app->uploadCommandList->Close();

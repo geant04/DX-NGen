@@ -7,6 +7,8 @@
 #include <vector>
 
 #define SWAPCHAIN_COUNT 2
+#define CLUSTERS_LIMIT 1024
+#define MAX_LIGHTS_IN_CLUSTER 256
 
 namespace Gfx
 {
@@ -140,6 +142,20 @@ namespace Gfx
 		// globalIdx is required to exist as a member var becausee of our AddToResourceBuffer funcs
 	};
 
+	struct Cluster
+	{
+		int lightIndices[MAX_LIGHTS_IN_CLUSTER];
+		int numLights = 0;
+		uint32_t globalIdx = 0;
+	};
+
+	struct ClusterBBOX
+	{
+		XMFLOAT3 min;
+		XMFLOAT3 max;
+		uint32_t globalIdx;
+	};
+
 	struct Resources
 	{
 		GlobalDescriptorHeaps globalDescriptorHeap;
@@ -207,8 +223,10 @@ namespace Gfx
 
 		// It's probably worth adding some "scene-loading" feature at some point,
 		// but if you want the true shabang, render: 2000000# of renderableObjects
-		ResourceBuffer<RenderableObject, 1000000> renderableObjects;
-		ResourceBuffer<PointLight, 10> pointLights;
+		ResourceBuffer<RenderableObject, 100> renderableObjects;
+		ResourceBuffer<PointLight, 512> pointLights;
+		ResourceBuffer<Cluster, CLUSTERS_LIMIT> pointLightClusters;
+		ResourceBuffer<ClusterBBOX, CLUSTERS_LIMIT> debugClusterBBOX;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;

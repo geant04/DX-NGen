@@ -97,6 +97,10 @@ namespace Gfx
 
 		buffer->resource = bufferInfo.buffer;
 		buffer->upload = bufferInfo.bufferUpload;
+
+		//buffer->numElements = data->size();
+		//buffer->structuredByteStride = sizeof( T );
+		//buffer->isDynamic = false;
 	}
 
 	void UploadMeshBuffer( MinimalDXApp* app, UploadMeshBufferInfo* info );

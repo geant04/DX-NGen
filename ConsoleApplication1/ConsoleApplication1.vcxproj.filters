@@ -142,5 +142,6 @@
     <None Include="..\shaders\csCull.hlsl" />
     <None Include="..\shaders\csMemSetZero.hlsl" />
     <None Include="..\shaders\vsIndirectGeometryShadows.hlsl" />
+    <None Include="..\shaders\csCluster.hlsl" />
   </ItemGroup>
 </Project>
