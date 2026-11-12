@@ -45,7 +45,7 @@ struct PointLight
 	uint globalIdx;
 };
 
-#define MAX_LIGHTS_IN_CLUSTER 256
+#define MAX_LIGHTS_IN_CLUSTER 128
 
 struct Cluster
 {

@@ -7,8 +7,8 @@
 #include <vector>
 
 #define SWAPCHAIN_COUNT 2
-#define CLUSTERS_LIMIT 1024
-#define MAX_LIGHTS_IN_CLUSTER 256
+#define CLUSTERS_LIMIT 2048
+#define MAX_LIGHTS_IN_CLUSTER 128
 
 namespace Gfx
 {
@@ -223,8 +223,8 @@ namespace Gfx
 
 		// It's probably worth adding some "scene-loading" feature at some point,
 		// but if you want the true shabang, render: 2000000# of renderableObjects
-		ResourceBuffer<RenderableObject, 100> renderableObjects;
-		ResourceBuffer<PointLight, 512> pointLights;
+		ResourceBuffer<RenderableObject, 1000000> renderableObjects;
+		ResourceBuffer<PointLight, 1024> pointLights;
 		ResourceBuffer<Cluster, CLUSTERS_LIMIT> pointLightClusters;
 		ResourceBuffer<ClusterBBOX, CLUSTERS_LIMIT> debugClusterBBOX;
 

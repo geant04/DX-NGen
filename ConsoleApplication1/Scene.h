@@ -46,7 +46,7 @@ struct ClusterParams
 {
 	uint32_t numClustersX = 16;
 	uint32_t numClustersY = 8;
-	uint32_t numClustersZ = 8;
+	uint32_t numClustersZ = 16;
 	uint32_t totalClusters = 0;
 };
 

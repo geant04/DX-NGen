@@ -508,7 +508,7 @@ void MinimalDXApp::Render()
 						XMStoreUInt3( &cb->clusterDims, { 
 							static_cast<float>( scene.clusterParams.numClustersX ), 
 							static_cast<float>( scene.clusterParams.numClustersY ), 
-							1 } );
+							static_cast<float>( scene.clusterParams.numClustersZ ) } );
 
 						camera = drawTask->pass->camera;
 					}

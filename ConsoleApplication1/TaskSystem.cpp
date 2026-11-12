@@ -9,6 +9,8 @@
 
 const bool testIndirectDraw = true;
 const bool disableSky = true;
+const bool disableShadows = true;
+const bool makeLightsMoveHackByUsingFXAA = true;
 
 static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* inOutTexture, 
 	Gfx::Sampler* bilinearSamplerClamp, Gfx::RenderTarget* screenRenderTarget, Gfx::Buffer* cameraDataBuffer, 
@@ -152,6 +154,8 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	}
 
 	// Indirect draws for our world-geometry
+	Gfx::Buffer* scenePointLightsBuffer = app->scene.scenePointLights;
+
 	{
 		Gfx::Buffer* transformBuffer = Gfx::AddBuffer( &resources );
 		transformBuffer->resource = app->scene.transformBuffer;
@@ -162,7 +166,6 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		Gfx::Buffer* transformIndexOffsetBuffer = app->scene.opaquePass.transformIndexOffsets;
 		Gfx::Buffer* indirectDrawArgsBuffer = app->scene.opaquePass.indirectCommandBuffer;
 		Gfx::Buffer* transformBatchIdsBuffer = app->scene.opaquePass.transformBatchIds;
-		Gfx::Buffer* scenePointLightsBuffer = app->scene.scenePointLights;
 		Gfx::Buffer* sceneClustersBuffer = app->scene.pointLightClusters;
 		Gfx::Buffer* debugBboxBuffer = app->scene.debugBboxClusters;
 		unsigned int numBatches = app->scene.opaquePass.commands.size();
@@ -210,7 +213,6 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		{
 			return;
 		}
-		// app->shadowTasks.push_back( drawShadows );
 
 		std::shared_ptr<ComputeTask> drawOpaqueCull = std::make_shared<ComputeTask>();
 		{
@@ -253,6 +255,25 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			return;
 		}
 
+		std::shared_ptr<DrawTask> drawPrepass = std::make_shared<DrawTask>();
+		{
+			drawPrepass->pass = &app->scene.opaquePass;
+			drawPrepass->constantBuffers.push_back( cameraDataBuffer );
+			drawPrepass->readBuffers.push_back( transformBuffer );
+			drawPrepass->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawPrepass->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
+			drawPrepass->initResources.pixelShaderName = nullptr;
+			drawPrepass->clearDepth = true;
+			drawPrepass->depthTest = true;
+			drawPrepass->viewportWidth = screenWidth;
+			drawPrepass->viewportHeight = screenHeight;
+			drawPrepass->BindRenderTargets( {}, sceneDepthTexture, &resources );
+		}
+
+		if ( !Gfx::CreateDrawTask( app, drawPrepass.get() ) )
+		{
+			return;
+		}
 		
 		std::shared_ptr<DrawTask> drawOpaque = std::make_shared<DrawTask>();
 		{
@@ -297,8 +318,14 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( clusterPointLights );
 			app->tasks.push_back( UavToSrv( sceneClustersBuffer ) );
 		}
-		app->tasks.push_back( drawShadows );
+
+		if ( !disableShadows )
+		{
+			app->tasks.push_back( drawShadows );
+		}
 		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
+		
+		// app->tasks.push_back( drawPrepass );
 		app->tasks.push_back( drawOpaque );
 	}
 
@@ -343,6 +370,12 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		fxaa->readWriteTextures.push_back( outBuffer );
 		fxaa->readTextures.push_back( screenTexture );
 		fxaa->constantBuffers.push_back( cameraDataBuffer );
+
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			fxaa->writeBuffers.push_back( scenePointLightsBuffer );
+		}
+
 		fxaa->staticSamplers.push_back( bilinearSamplerClamp );
 
 		fxaa->initResources.csAssetName = "csFxaa.hlsl";
@@ -359,7 +392,15 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	if ( true )
 	{
 		app->tasks.push_back( SrvToUav( outBuffer ) );
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			app->tasks.push_back( SrvToUav( scenePointLightsBuffer ) );
+		}
 		app->tasks.push_back( fxaa );
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			app->tasks.push_back( UavToSrv( scenePointLightsBuffer ) );
+		}
 		app->tasks.push_back( UavToSrv( outBuffer ) );
 	}
 	else

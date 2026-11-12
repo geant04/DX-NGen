@@ -1,6 +1,8 @@
 #include "CommonBuffers.hlsli"
 
 RWTexture2D<float4> outputTexture : register(u0);
+RWStructuredBuffer<PointLight> pointLights : register(u0, space1);
+
 Texture2D<float4> inputTexture : register(t0);
 SamplerState texSampler : register(s0);
 
@@ -183,4 +185,12 @@ void main( uint3 dtid : SV_DispatchThreadID )
 {
 	// Don't interrogate me on how this works just yet...
 	FxaaInternal( dtid.xy );
+	
+	uint globalIdx = dtid.x + dtid.y * uint( 1.0f / data.invScreenWidth );
+	if ( globalIdx < data.numPointLights )
+	{
+		pointLights[globalIdx].worldPosition.x += 0.3f * sin( data.frameNumber * 0.1f + globalIdx );
+		pointLights[globalIdx].worldPosition.y += 0.3f * cos( data.frameNumber * 0.1f + globalIdx );
+		pointLights[globalIdx].worldPosition.z += 0.3f * cos( data.frameNumber * 0.1f + globalIdx );
+	}
 }

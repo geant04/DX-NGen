@@ -23,11 +23,13 @@ SamplerComparisonState shadowSampler : register(s1);
 StructuredBuffer<PointLight> pointLights : register(t2, space1);
 StructuredBuffer<Cluster> pointLightClusters : register(t3, space1);
 
+#define RENDER_SUN 0
 #define RENDER_SHADOWS 0
 #define RENDER_FUN_RED_LIGHT_SCENE 0
 #define TEST_SIMPLE_BOX_TAP 1
 #define DEBUG_CLUSTERS 0
 #define USE_CLUSTERS 1
+#define DEBUG_CLUSTERS_AND_RENDER DEBUG_CLUSTERS && USE_CLUSTERS
 
 float GetShadow( in float4 lightDepthPosition, in float2 screenPos )
 {
@@ -103,12 +105,38 @@ float3 IntToRandomColor( int seed )
 	return float3( r, g, b );
 }
 
+float LinearizeDepth( float depth )
+{
+	float viewSpaceZ = ( 0.1f * 1000.0f ) / ( 1000.0f - depth * ( 1000.0f - 0.1f ) );
+	
+	return viewSpaceZ; // ( viewSpaceZ - 0.1f ) / ( 1000.0f - 0.1f );
+}
+
+float LinearizeDepth01( float depth )
+{
+	return 0.1f / ( 1000.0f - depth * ( 1000.0f - 0.1f ) );
+}
+
+[earlydepthstencil]
 float4 PSMain( PSInput input ) : SV_TARGET
 {	
 	float3 outColor = 0.0f;
-	float3 albedo = lerp( IntToRandomColor( input.limitCulled + 1 ), 1.0f,  0.8f );
+	float3 albedo = lerp( IntToRandomColor( input.limitCulled + 1 ), 1.0f,  0.99f );
 	float3 normal = normalize( input.normal.rgb );
 		
+float shadow = 0.0f;
+	
+#if RENDER_SHADOWS
+	shadow = GetShadow( input.lightPosition, input.position.xy );
+#endif
+	
+#if RENDER_SUN
+	float3 sunDir = normalize( data.sunDirection.rgb );
+	float sunLightLambert =  max( dot( normal, normalize( -sunDir ) ), 0.0f );
+
+	outColor = albedo * sunLightLambert * ( 1.0f - shadow + 0.25f );
+#endif 
+	
 #if RENDER_FUN_RED_LIGHT_SCENE
 	// Will replace this with the actual pointLight calculation
 	Light defaultTestLight;
@@ -131,10 +159,15 @@ float4 PSMain( PSInput input ) : SV_TARGET
 	uint x = uint( uv.x * float( data.clusterDims.x ) );
 	uint y = uint( uv.y * float( data.clusterDims.y ) );
 	
-	float viewZ = input.position.z;
-	float normalizedZ = ( viewZ - 0.1f ) / ( 1000.0f - 0.1f );
-	uint z = uint( saturate( normalizedZ ) * float( data.clusterDims.z ) );
-	z = min( z, data.clusterDims.z - 1 );
+	float normalizedDepth = input.position.z;
+	float linearViewZ = LinearizeDepth( normalizedDepth );
+
+	float numSlices = float( data.clusterDims.z );
+	const float near = 0.1f;
+	const float far = 1000.0f;
+	const float scale = ( numSlices / log( far / near ) );
+	const float bias = ( ( numSlices * log( near ) ) / log( far / near ) );
+	uint z = log( linearViewZ ) * scale - bias;
 	
 	uint clusterID = x + (y * data.clusterDims.x) + z * ( data.clusterDims.x * data.clusterDims.y );
 	
@@ -159,35 +192,54 @@ float4 PSMain( PSInput input ) : SV_TARGET
 		float attenuation = saturate(1.0f - distToLightSq / pointLight.squaredRadius);
 		
 		radiance *= ( pointLight.color ) * ( pointLight.squaredRadius / distToLightSq ) * attenuation * attenuation;
-		outColor += 0.1f * radiance;
+		outColor += 0.05f * radiance;
 	}
-#endif
-	
-#if RENDER_SHADOWS
-	float shadow = GetShadow( input.lightPosition, input.position.xy );
-	float3 sunDir = normalize( data.sunDirection.rgb );
-	float sunLightLambert =  max( dot( normal, normalize( -sunDir ) ), 0.0f );
-
-	outColor *= sunLightLambert * ( 1.0f - shadow + 0.25f );
 #endif
 	
 #if DEBUG_CLUSTERS
 	// Convert sv_position to cluster position
-	
-#if !USE_CLUSTERS
+#if 0
 	float2 uv = float2( input.position.x * data.invScreenWidth, input.position.y * data.invScreenHeight );
 	uint x = uint( uv.x * float( data.clusterDims.x ) );
 	uint y = uint( uv.y * float( data.clusterDims.y ) );
 	
-	float viewZ = input.position.z;
-	float normalizedZ = ( viewZ - 0.1f ) / ( 1000.0f - 0.1f );
-	uint z = uint( saturate( normalizedZ ) * float( data.clusterDims.z ) );
-	z = min( z, data.clusterDims.z - 1 );
+	float depth = input.position.z;
+	float linearViewZ = LinearizeDepth( depth );
+
+	// new debug lol sorry
+	float numSlices = float( data.clusterDims.z );
+	const float near = 0.1f;
+	const float far = 1000.0f;
+	const float scale = ( numSlices / log( far / near ) );
+	const float bias = ( ( numSlices * log( near ) ) / log( far / near ) );
+	uint z = log( linearViewZ ) * scale - bias;
 	
+	float3 colors[8] = { 
+		float3( 0.0f, 0.0f, 0.0f ),
+		float3( 0.0f, 0.0f, 1.0f ),
+		float3( 0.0f, 1.0f, 0.0f ),
+		float3( 0.0f, 1.0f, 1.0f ),
+		float3( 1.0f, 0.0f, 0.0f ),
+		float3( 1.0f, 0.0f, 1.0f ),
+		float3( 1.0f, 1.0f, 0.0f ),
+		float3( 1.0f, 1.0f, 1.0f )
+	};
+	
+	float3 debugColor = colors[z % 8];
 	uint numLights = pointLightClusters[x + (y * data.clusterDims.x) + z * ( data.clusterDims.x * data.clusterDims.y )].numLights;
+	
 #endif
-	float3 testValue = ( float( numLights ) / MAX_LIGHTS_IN_CLUSTER ); 
-	outColor = lerp( float3( 0.0f, testValue.x, 0.0f ), outColor, 0.5f );
+	float numLights01 = ( float( numLights ) / MAX_LIGHTS_IN_CLUSTER );
+	
+	float3 colorLevels[4] =
+	{
+		float3( 0.0f, 1.0f, 0.0f ),
+		float3( 1.0f, 1.0f, 0.0f ),
+		float3( 1.0f, 0.5f, 0.0f ),
+		float3( 1.0f, 0.0f, 0.0f )
+	};
+	
+	outColor = lerp( colorLevels[ numLights01 * 4.0f ], outColor, 0.33f );
 #endif
 	
 	return float4( outColor, 1.0f );

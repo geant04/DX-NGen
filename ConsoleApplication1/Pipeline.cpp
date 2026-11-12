@@ -95,7 +95,14 @@ void CreatePSO( const ComPtr<ID3D12Device> &device, DrawTask* drawTask )
 		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC( D3D12_DEFAULT );
 		psoDesc.DepthStencilState.DepthEnable = TRUE;
 		psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+
+		D3D12_COMPARISON_FUNC comparisonFunc = D3D12_COMPARISON_FUNC_LESS;
+		//if ( drawTask->pass && !isDepthOnly )
+		//{
+		//	comparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		//	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+		//}
+		psoDesc.DepthStencilState.DepthFunc = comparisonFunc;
 	}
 	
 	psoDesc.DepthStencilState.StencilEnable = stencilTest;

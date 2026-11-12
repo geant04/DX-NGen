@@ -45,8 +45,13 @@ void BuildScene( MinimalDXApp* app )
 
 		Gfx::RenderableObject* testCube = Gfx::AddToResourceBuffer( &resources.renderableObjects );
 		testCube->mesh = resources.globalTestCubeMesh;
-		testCube->transform.Scale( { 0.2f, 0.2f, 0.2f } );
-		testCube->transform.Translate( { randomXPos, randomYPos, randomZPos } );
+
+		float scaleX = ( i % 1000 == 0 ) ? 1.0f : 0.2f;
+		float scaleY = ( i % 1000 == 0 ) ? 16.0f : 0.2f;
+		float scaleZ = ( i % 1000 == 0 ) ? 1.0f : 0.2f;
+
+		testCube->transform.Scale( { scaleX, scaleY, scaleZ } );
+		testCube->transform.Translate( { randomXPos, randomYPos + 0.5f * scaleY, randomZPos } );
 		testCube->isShadowCaster = true;
 		sceneObjects.push_back(testCube);
 	}
@@ -294,7 +299,7 @@ static void PrepareScenePointLights( MinimalDXApp* app )
 
 	std::mt19937 randomGenerator( 0xC0FFEEu );
 
-	float halfScaleX = 100.0f;
+	float halfScaleX = 200.0f;
 	float yMax = 10.0f;
 
 	std::uniform_real_distribution<float> positionDistribution( -halfScaleX, halfScaleX );
@@ -329,12 +334,14 @@ static void PrepareScenePointLights( MinimalDXApp* app )
 		app, 
 		scenePointLights, 
 		&resources.pointLights.buffer, 
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE );
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS );
 	
 	scenePointLights->numElements = resources.pointLights.count;
 	scenePointLights->structuredByteStride = sizeof( Gfx::PointLight );
 	scenePointLights->isDynamic = false;
 	Gfx::CreateSRVBuffer( app->device, scenePointLights, &resources );
+	Gfx::CreateUAVBuffer( app->device, scenePointLights, &resources );
 }
 
 static void PreparePointLightClusters( MinimalDXApp* app )

@@ -90,8 +90,14 @@ void cs_main( uint3 dtid : SV_DispatchThreadID )
 	viewRays[2] = uvToViewRay( float2( uvMin.x, uvMax.y ) );
 	viewRays[3] = uvToViewRay( float2( uvMax.x, uvMax.y ) );
 	
-	float nearZ = normalizedDepthToViewZ( float( dtid.z ) * invClusterDimsZ ); // 0.1f
-	float farZ = normalizedDepthToViewZ( float( dtid.z + 1 ) * invClusterDimsZ ); // 1000.0f
+	// https://www.aortiz.me/2018/12/21/CG.html
+	float slicePortionNear = float( dtid.z ) * invClusterDimsZ;
+	float slicePortionFar = float( dtid.z + 1 ) * invClusterDimsZ;
+	const float near = 0.1f;
+	const float far = 1000.0f;
+	
+	float nearZ = near * pow( far / near, slicePortionNear );
+	float farZ = near * pow( far / near, slicePortionFar );
 	
 	ClusterBBOX bbox;
 	bbox.max = float3( -1e30, -1e30, -1e30 );
