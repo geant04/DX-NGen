@@ -2,6 +2,11 @@
 
 #include "Mesh.h"
 
+struct TransformGPU
+{
+	XMFLOAT4X4 model;
+};
+
 struct Transform
 {
 	XMFLOAT4X4 model;
@@ -60,11 +65,6 @@ struct Model
 	Transform transform = {};
 
 	Mesh* mesh;
-};
-
-struct Scene
-{
-	std::vector<Model> models;
 };
 
 void LoadModel( const char* filePath, Model* model );

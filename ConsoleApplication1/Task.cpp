@@ -11,31 +11,54 @@ void DrawTask::execute(
 	commandList->SetGraphicsRootSignature( rootSignature.Get() );
 	commandList->SetPipelineState( pipelineState.Get() );
 
-	for ( Gfx::Buffer* buffer : dynamicBuffers )
+	for ( Gfx::Buffer* buffer : constantBuffers )
 	{
-		memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		if ( buffer->isDynamic )
+		{
+			memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		}
 	}
 
-    if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
-    {
-        int bindingSlot = 0;
-        if ( bindings.readTextures.descriptorCount > 0 )
-        {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
-        }
-        if ( bindings.readWriteTextures.descriptorCount > 0 )
-        {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
-        }
-        if ( bindings.buffers.descriptorCount > 0 )
-        {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.buffers.gpuHandle);
-        }
-        if ( bindings.dynamicBuffers.descriptorCount > 0 )
-        {
-             commandList->SetGraphicsRootDescriptorTable(bindingSlot++, bindings.dynamicBuffers.gpuHandle);
-        }
-    }
+	for ( Gfx::Buffer* buffer : readBuffers )
+	{
+		if ( buffer->isDynamic )
+		{
+			memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		}
+	}
+
+	for ( Gfx::Buffer* buffer : writeBuffers )
+	{
+		if ( buffer->isDynamic )
+		{
+			memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		}
+	}
+
+	if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
+	{
+		int bindingSlot = 0;
+		if ( bindings.readTextures.descriptorCount > 0 )
+		{
+			commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.readTextures.gpuHandle );
+		}
+		if ( bindings.readBuffers.descriptorCount > 0 )
+		{
+			commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.readBuffers.gpuHandle );
+		}
+		if ( bindings.readWriteTextures.descriptorCount > 0 )
+		{
+			commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.readWriteTextures.gpuHandle );
+		}
+		if ( bindings.writeBuffers.descriptorCount > 0 )
+		{
+			commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.writeBuffers.gpuHandle );
+		}
+		if ( bindings.constantBuffers.descriptorCount > 0 )
+		{
+			commandList->SetGraphicsRootDescriptorTable( bindingSlot++, bindings.constantBuffers.gpuHandle );
+		}
+	}
 
 	if ( ( renderTargetHandles.empty() && !outputToBackBuffer ) && !depthStencilTarget )
     {
@@ -85,7 +108,7 @@ void DrawTask::execute(
 
 	if ( clearRenderTarget )
 	{
-		FLOAT clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+		FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 		if ( outputToBackBuffer )
 		{
 			commandList->ClearRenderTargetView( *rtvHandlePtr, clearColor, 0, nullptr);
@@ -128,10 +151,27 @@ void DrawTask::execute(
 
 	commandList->OMSetRenderTargets( numRenderTargets, rtvHandlePtr, FALSE, depthStencilHandlePtr );
 
-	// Bind vertex buffer and draw
-	commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
-	commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
-	commandList->DrawInstanced( model->mesh->vertexCount, 1, 0, 0 );
+	if ( pass )
+	{
+		commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+		commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
+
+		commandList->ExecuteIndirect( 
+			pass->commandSignature.Get(),
+			pass->batchCount,
+			pass->indirectCommandBuffer->resource.Get(), 
+			0, 
+			nullptr,
+			0 );
+	}
+	else
+	{
+		// Bind vertex buffer and draw
+		// std::cout << "draw: " << drawTaskID << std::endl;
+		commandList->IASetPrimitiveTopology( D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+		commandList->IASetVertexBuffers( 0, 1, &vertexBufferView );
+		commandList->DrawInstanced( model->mesh->vertexCount, 1, 0, 0 );
+	}
 }
 
 bool DrawTask::BindRenderTargets( std::vector<Gfx::RenderTarget*> renderTargets, Gfx::Texture* depthStencilTarget, Gfx::Resources* resources )
@@ -173,11 +213,26 @@ void BarrierTask::execute(
 )
 {
 	// Barrier transition from PS to UA
-	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-		resource,
-		stateBefore,
-		stateAfter
-	);
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = type;
+
+	if ( type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION )
+	{
+		if ( type == D3D12_RESOURCE_BARRIER_TYPE_UAV )
+		{
+			barrier.UAV.pResource = resource;
+		}
+	}
+	else
+	{
+		barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			resource,
+			stateBefore,
+			stateAfter
+		);
+	}
+
+	// std::cout << "Transition: " << resource << std::endl;
 	commandList->ResourceBarrier(1, &barrier);
 }
 
@@ -188,35 +243,42 @@ void ComputeTask::execute(
 )
 {
 	// Memcpy update info from CPU to GPU?
-	for ( Gfx::Buffer* buffer : dynamicBuffers )
+	for ( Gfx::Buffer* buffer : constantBuffers )
 	{
-		memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		if ( buffer->isDynamic )
+		{
+			memcpy( buffer->mappedBufferData, buffer->cpuBufferData, buffer->cpuDataSize );
+		}
 	}
 
-    commandList->SetComputeRootSignature(rootSignature.Get());
-    commandList->SetPipelineState(pipelineState.Get());
+	commandList->SetComputeRootSignature(rootSignature.Get());
+	commandList->SetPipelineState(pipelineState.Get());
 
-    // PSO and root signature setup
-    if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
-    {
-        int bindingSlot = 0;
-        if ( bindings.readTextures.descriptorCount > 0 )
-        {
-             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
-        }
-        if ( bindings.readWriteTextures.descriptorCount > 0 )
-        {
-             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
-        }
-        if ( bindings.buffers.descriptorCount > 0 )
-        {
-             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.buffers.gpuHandle);
-        }      
-        if ( bindings.dynamicBuffers.descriptorCount > 0 )
-        {
-             commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.dynamicBuffers.gpuHandle);
-        }
-    }
+	// PSO and root signature setup
+	if ( descriptorHeap != nullptr && descriptorHeap->descriptorHeapPtr != nullptr )
+	{
+		int bindingSlot = 0;
+		if ( bindings.readTextures.descriptorCount > 0 )
+		{
+			commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readTextures.gpuHandle);
+		}
+		if ( bindings.readBuffers.descriptorCount > 0 )
+		{
+			commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readBuffers.gpuHandle);
+		}
+		if ( bindings.readWriteTextures.descriptorCount > 0 )
+		{
+			commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.readWriteTextures.gpuHandle);
+		}
+		if ( bindings.writeBuffers.descriptorCount > 0 )
+		{
+			commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.writeBuffers.gpuHandle);
+		}
+		if ( bindings.constantBuffers.descriptorCount > 0 )
+		{
+			commandList->SetComputeRootDescriptorTable(bindingSlot++, bindings.constantBuffers.gpuHandle);
+		}
+	}
 
-    commandList->Dispatch( initResources.dispatchWidth, initResources.dispatchHeight, 1 );
+	commandList->Dispatch( initResources.dispatchWidth, initResources.dispatchHeight, initResources.dispatchDepth );
 }

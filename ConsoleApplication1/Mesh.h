@@ -16,6 +16,13 @@ public:
 	const uint32_t vertexCount;
 	const uint32_t vertexBufferSize;
 
+	ComPtr<ID3D12Resource> vertexBuffer = nullptr;
+	ComPtr<ID3D12Resource> vertexBufferUpload = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
+	
+	uint32_t vertexOffset = 0;
+	bool meshUploaded = false;
+
 	Mesh() : vertices(), vertexCount( 0 ), vertexBufferSize( 0 ) {}
 
 	Mesh(

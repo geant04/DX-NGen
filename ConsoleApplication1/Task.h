@@ -4,6 +4,7 @@
 #include "Mesh.h"
 #include "Camera.h"
 #include "ResourceManager.h"
+#include "Scene.h"
 
 struct PreparedDescriptorTable
 {
@@ -15,8 +16,9 @@ struct PreparedBindings
 {
 	PreparedDescriptorTable readTextures;
 	PreparedDescriptorTable readWriteTextures;
-	PreparedDescriptorTable buffers;
-	PreparedDescriptorTable dynamicBuffers;
+	PreparedDescriptorTable readBuffers;
+	PreparedDescriptorTable writeBuffers;
+	PreparedDescriptorTable constantBuffers;
 };
 
 enum TaskType
@@ -49,8 +51,9 @@ public:
 
 	std::vector<Gfx::Texture*> readTextures;
 	std::vector<Gfx::Texture*> readWriteTextures;
-	std::vector<Gfx::Buffer*> buffers;
-	std::vector<Gfx::Buffer*> dynamicBuffers;
+	std::vector<Gfx::Buffer*> readBuffers;
+	std::vector<Gfx::Buffer*> writeBuffers;
+	std::vector<Gfx::Buffer*> constantBuffers;
 
 	std::vector<Gfx::Sampler*> staticSamplers;
 
@@ -88,6 +91,10 @@ public:
 	int viewportHeight;
 
 	Model* model;
+	Gfx::RenderableObject* object;
+	
+	// Some random indirect thing slapped in
+	Pass* pass;
 
 	bool clearRenderTarget = false;
 	bool clearDepth = false;
@@ -108,6 +115,8 @@ public:
 
 	InitResources initResources;
 
+	unsigned int drawTaskID = 0;
+
 	virtual TaskType getType() const override { return Draw; }
 };
 
@@ -117,8 +126,9 @@ struct InitResources
 {
 	const char* csAssetName;
 	const char* entryPoint;
-	uint32_t dispatchWidth;
-	uint32_t dispatchHeight;
+	uint32_t dispatchWidth = 8;
+	uint32_t dispatchHeight = 8;
+	uint32_t dispatchDepth = 1;
 };
 
 public:
@@ -139,6 +149,7 @@ public:
 	ID3D12Resource* resource = nullptr;
     D3D12_RESOURCE_STATES stateBefore = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES stateAfter = D3D12_RESOURCE_STATE_COMMON;
+	D3D12_RESOURCE_BARRIER_TYPE type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 
 	void execute(
 		ComPtr<ID3D12GraphicsCommandList> commandList, 

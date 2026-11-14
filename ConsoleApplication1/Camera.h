@@ -6,19 +6,26 @@ struct CameraConstants {
 	XMFLOAT4X4 modelViewProj;
 	XMFLOAT4X4 viewProjInverse;
 	XMFLOAT4X4 lightViewProj;
+	XMFLOAT4X4 projInverse;
+	XMFLOAT4X4 view;
 	XMFLOAT4 cameraPosition;
 	XMFLOAT3 sunDirection;
 	uint32_t frameNumber;
 	bool resetPathTracer;
 	float invScreenWidth;
 	float invScreenHeight;
-	uint32_t padding0[1];
+	uint32_t numTransforms; // not a good solution for now
+	uint32_t numLights; // not a good solution for now
+	XMUINT3 clusterDims; //  not a good solution for now
+	uint32_t padding[1];
 };
 
 
 struct Camera
 {
 	XMMATRIX viewProj;
+	XMMATRIX view;
+	XMMATRIX proj;
 	XMVECTOR initialDirection = XMVector4Normalize( XMVectorSet( 0.0f, 2.0f, -10.0f, 1.0f ) );
 	XMFLOAT4 eye = { 0.0f, 0.0f, 0.0f, 0.0f };
 	XMFLOAT4 at = { 0.0f, 1.0f, 0.0f, 1.0f };
@@ -32,7 +39,7 @@ struct Camera
 
 	float fov = XM_PIDIV4;
 	float nearZ = 0.1f;
-	float farZ = 100.0f;
+	float farZ = 1000.0f;
 
 	// Global camera tracking vars
 	bool isLeftMouseDown = false;

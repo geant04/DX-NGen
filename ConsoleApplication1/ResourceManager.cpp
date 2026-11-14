@@ -135,6 +135,42 @@ namespace Gfx
 		return true;
 	}
 
+	bool AllocateSRVBuffer( ComPtr<ID3D12Device> device, DescriptorHeap* shaderResourceHeap, Buffer* buffer )
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.NumElements = buffer->numElements;
+		srvDesc.Buffer.StructureByteStride = buffer->structuredByteStride;
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+		device->CreateShaderResourceView( buffer->resource.Get(), &srvDesc, shaderResourceHeap->GetCpuHandle() );
+
+		buffer->srv.index = shaderResourceHeap->handleIndex;
+		shaderResourceHeap->handleIndex++;
+
+		return true;
+	}
+
+	bool AllocateUAVBuffer( ComPtr<ID3D12Device> device, DescriptorHeap* shaderResourceHeap, Buffer* buffer )
+	{
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		uavDesc.Buffer.FirstElement = 0;
+		uavDesc.Buffer.NumElements = buffer->numElements;
+		uavDesc.Buffer.StructureByteStride = buffer->structuredByteStride;
+		uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+		device->CreateUnorderedAccessView( buffer->resource.Get(), nullptr, &uavDesc, shaderResourceHeap->GetCpuHandle() );
+
+		buffer->uav.index = shaderResourceHeap->handleIndex;
+		shaderResourceHeap->handleIndex++;
+
+		return true;
+	}
+
 	void CreateSwapChainRTVs( ComPtr<ID3D12Device> device, ComPtr<IDXGISwapChain4> swapChain, Resources* resources, uint32_t frameCount )
 	{
 		DescriptorHeap* rtvDescriptorHeap = &resources->globalDescriptorHeap.rtvGlobalHeap;
@@ -171,9 +207,9 @@ namespace Gfx
 		D3D12_CLEAR_VALUE clearValue = {};
 		clearValue.Format = format;
 		clearValue.Color[0] = 0.0f;
-		clearValue.Color[1] = 0.2f;
-		clearValue.Color[2] = 0.4f;
-		clearValue.Color[3] = 1.0f;
+		clearValue.Color[1] = 0.0f;
+		clearValue.Color[2] = 0.0f;
+		clearValue.Color[3] = 0.0f;
 
 		// Temporarily stage memory CPU/GPU
 		CD3DX12_HEAP_PROPERTIES defaultHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -196,7 +232,7 @@ namespace Gfx
 	{
 		Texture texture;
 		texture.format = format;
-		texture.srvFormat = ( format == DXGI_FORMAT_D16_UNORM ) ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_UNKNOWN;
+		texture.srvFormat = ( format == DXGI_FORMAT_D32_FLOAT ) ? DXGI_FORMAT_R32_FLOAT : DXGI_FORMAT_UNKNOWN;
 		texture.mips = mips;
 
 		if ( !isDepth )
@@ -322,6 +358,26 @@ namespace Gfx
 		return AllocateConstantBufferView( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
 	}
 
+	bool CreateSRVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources )
+	{
+		if ( buffer == nullptr )
+		{
+			return false;
+		}
+
+		return AllocateSRVBuffer( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
+	}
+
+	bool CreateUAVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources )
+	{
+		if ( buffer == nullptr )
+		{
+			return false;
+		}
+		
+		return AllocateUAVBuffer( device, &resources->globalDescriptorHeap.shaderResourceGlobalHeap, buffer );
+	}
+
 	bool CreateRenderTargetFromTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources )
 	{
 		if ( texture == nullptr )
@@ -401,5 +457,10 @@ namespace Gfx
 	Model* AddModel( Resources* resources )
 	{
 		return &resources->models[resources->modelCount++];
+	}
+
+	RenderableObject* AddRenderableObject( Resources* resources )
+	{
+		return &resources->renderableObjects.buffer[resources->renderableObjects.count++];
 	}
 }

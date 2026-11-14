@@ -7,6 +7,11 @@
 #include <iostream>
 #include <windowsx.h>
 
+const bool testIndirectDraw = true;
+const bool disableSky = true;
+const bool disableShadows = true;
+const bool makeLightsMoveHackByUsingFXAA = true;
+
 static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* inOutTexture, 
 	Gfx::Sampler* bilinearSamplerClamp, Gfx::RenderTarget* screenRenderTarget, Gfx::Buffer* cameraDataBuffer, 
 	unsigned int screenWidth, unsigned int screenHeight )
@@ -14,12 +19,12 @@ static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* 
 	std::shared_ptr<ComputeTask> pathTraceTask = std::make_shared<ComputeTask>();
 	{
 		pathTraceTask->readWriteTextures.push_back( inOutTexture );
-		pathTraceTask->dynamicBuffers.push_back( cameraDataBuffer );
+		pathTraceTask->constantBuffers.push_back( cameraDataBuffer );
 
 		pathTraceTask->initResources.csAssetName = "csPathTracer.hlsl";
 		pathTraceTask->initResources.entryPoint = "CSMain";
-		pathTraceTask->initResources.dispatchWidth = ( screenWidth + 7) / 8; // hardcoded (8, 8, 1) dims
-		pathTraceTask->initResources.dispatchHeight = ( screenHeight + 7) / 8;
+		pathTraceTask->initResources.dispatchWidth = ( screenWidth + 7 ) / 8; // hardcoded (8, 8, 1) dims
+		pathTraceTask->initResources.dispatchHeight = ( screenHeight + 7 ) / 8;
 	}
 
 	if ( !Gfx::CreateComputeTask( app, pathTraceTask.get() ) )
@@ -27,7 +32,6 @@ static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* 
 		return;
 	}
 
-	// Temp disabling these tasks and only pushing drawScreen, which now does "draw cube" actually
 	app->pathTracingTasks.push_back( pathTraceTask );
 	app->pathTracingTasks.push_back( UavToSrv(  inOutTexture ) );
 	app->pathTracingTasks.push_back( drawToScreen( app, inOutTexture, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
@@ -54,10 +58,12 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 
 	Gfx::Texture* screenTexture = Gfx::AddTexture( &resources );
 	Gfx::Texture* sceneDepthTexture = Gfx::AddTexture( &resources );
-	Gfx::Buffer* cameraDataBuffer = Gfx::AddBuffer( &resources );
+
 	Gfx::Sampler* bilinearSamplerClamp = Gfx::AddSampler( &resources );
 	Gfx::Sampler* pcfShadowSampler = Gfx::AddSampler( &resources );
 	Gfx::RenderTarget* screenRenderTarget = Gfx::AddRenderTarget( &resources );
+
+	Gfx::Buffer* cameraDataBuffer = Gfx::AddBuffer( &resources );
 
 	{
 		// BindRenderTargets should be able to handle outputToBackbuffer, so this stuff below should be unnecessary
@@ -86,8 +92,11 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 
 	Gfx::CreateRWTexture( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
 	Gfx::CreateReadTexture( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
+	Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D32_FLOAT, 1 );
 	Gfx::CreateConstantBuffer( device, cameraDataBuffer, &resources, &app->cameraConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
 	Gfx::CreateRTV( device, screenTexture, &resources, screenWidth, screenHeight, screenFormat, screenTextureMips );
+	
+	cameraDataBuffer->isDynamic = true;
 
 	BuildPathtracerTaskSystemInternal( app, 
 		screenTexture, 
@@ -96,15 +105,10 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		cameraDataBuffer, 
 		screenWidth, screenHeight );
 
-	// Shadow draw tasks... Need to refactor this in such a way that:
-	// 1. let every object have a shadowCaster flag or something
-	// 2. process all geometry separately and automatically generate draw tasks from there
-	// 3. if above works, then the same logic maps for shadows
-	// This is a temporary hack because I want to say "I added shadow maps!" to my engine.
 	const unsigned int shadowMapSize = 2048;
 	Gfx::Texture* sunShadowMap = Gfx::AddTexture( &resources );
-	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D16_UNORM, 1 );
-	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R16_UNORM, 1 );
+	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D32_FLOAT, 1 );
+	Gfx::CreateReadTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_R32_FLOAT, 1 );
 
 	// Sync
 	{
@@ -116,9 +120,11 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	std::shared_ptr<DrawTask> drawSky = std::make_shared<DrawTask>();
 	{
 		drawSky->model = fullScreenTriangle;
-		drawSky->dynamicBuffers.push_back( cameraDataBuffer );
+		drawSky->constantBuffers.push_back( cameraDataBuffer );
 		drawSky->initResources.vertexShaderName = "vsTriangle.hlsl";
 		drawSky->initResources.pixelShaderName = "sky.hlsl";
+
+		drawSky->drawTaskID = 420;
 
 		drawSky->clearRenderTarget = false;
 		drawSky->depthTest = false;
@@ -131,113 +137,194 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		return;
 	}
 
-	std::shared_ptr<DrawTask> drawTestCube = std::make_shared<DrawTask>();
 	{
-		Gfx::CreateDepthTexture( device, sceneDepthTexture, &resources, screenWidth, screenHeight, DXGI_FORMAT_D16_UNORM, 1 );
+		// Geometry draw
+		app->tasks.push_back( SrvToRtv( screenTexture ) );
 		
-		drawTestCube->model = &resources.globalTestCube;
-		drawTestCube->model->transform.Scale( { 2.0f, 2.5f, 2.0f } );
-		drawTestCube->model->transform.Translate( { 0.0f, 1.5f, 0.0f } );
+		if ( !disableSky )
 		{
-			Gfx::Buffer* cubeConstantBuffer = Gfx::AddBuffer( &resources );
-			Gfx::CreateConstantBuffer( device, cubeConstantBuffer, &resources, &drawTestCube->drawConstants, 
-				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-			drawTestCube->dynamicBuffers.push_back( cubeConstantBuffer );
+			app->tasks.push_back( drawSky );
 		}
-		drawTestCube->readTextures.push_back( sunShadowMap );
-		drawTestCube->staticSamplers.push_back( bilinearSamplerClamp );
-		drawTestCube->staticSamplers.push_back( pcfShadowSampler );
-		drawTestCube->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawTestCube->initResources.pixelShaderName = "psLitGeometry.hlsl";
-		drawTestCube->clearRenderTarget = false;
-		drawTestCube->clearDepth = true;
-		drawTestCube->depthTest = true;
-		drawTestCube->outputToBackBuffer = false;
-		drawTestCube->BindRenderTargets( { screenRenderTarget }, sceneDepthTexture, &resources );
-	}
-	
-	if ( !Gfx::CreateDrawTask( app, drawTestCube.get() ) )
-	{
-		return;
 	}
 
-	std::shared_ptr<DrawTask> drawTestFloor = std::make_shared<DrawTask>();
+	// Indirect draws for our world-geometry
+	Gfx::Buffer* scenePointLightsBuffer = app->scene.scenePointLights;
+
 	{
-		drawTestFloor->model = testFloorModel;
-		drawTestFloor->model->transform.Scale( { 20.0f, 0.5f, 20.0f } );
-		drawTestFloor->model->transform.Translate( { 0.0f, -0.75f, 0.0f } );
+		Gfx::Buffer* transformBuffer = Gfx::AddBuffer( &resources );
+		transformBuffer->resource = app->scene.transformBuffer;
+		transformBuffer->numElements = app->scene.transformCount;
+		transformBuffer->structuredByteStride = sizeof( Transform );
+		Gfx::CreateSRVBuffer( device, transformBuffer, &resources );
+
+		Gfx::Buffer* transformIndexOffsetBuffer = app->scene.opaquePass.transformIndexOffsets;
+		Gfx::Buffer* indirectDrawArgsBuffer = app->scene.opaquePass.indirectCommandBuffer;
+		Gfx::Buffer* transformBatchIdsBuffer = app->scene.opaquePass.transformBatchIds;
+		Gfx::Buffer* sceneClustersBuffer = app->scene.pointLightClusters;
+		Gfx::Buffer* debugBboxBuffer = app->scene.debugBboxClusters;
+		unsigned int numBatches = app->scene.opaquePass.commands.size();
+
+		// All of this below should not exist, they should've been built in Scene already, or something else
 		{
-			Gfx::Buffer* floorConstantBuffer = Gfx::AddBuffer( &resources );
-			Gfx::CreateConstantBuffer( device, floorConstantBuffer, &resources, &drawTestFloor->drawConstants, 
-				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-			drawTestFloor->dynamicBuffers.push_back( floorConstantBuffer );
-		}
-		drawTestFloor->readTextures.push_back( sunShadowMap );
-		drawTestFloor->staticSamplers.push_back( bilinearSamplerClamp );
-		drawTestFloor->staticSamplers.push_back( pcfShadowSampler );
-		drawTestFloor->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawTestFloor->initResources.pixelShaderName = "psLitGeometry.hlsl";
-		drawTestFloor->clearRenderTarget = false;
-		drawTestFloor->clearDepth = false;
-		drawTestFloor->depthTest = true;
-		drawTestFloor->outputToBackBuffer = false;
-		drawTestFloor->BindRenderTargets( { screenRenderTarget }, sceneDepthTexture, &resources );
-	}
-	
-	if ( !Gfx::CreateDrawTask( app, drawTestFloor.get() ) )
-	{
-		return;
-	}
+			transformIndexOffsetBuffer->numElements = app->scene.transformCount;
+			transformIndexOffsetBuffer->structuredByteStride = sizeof( int );
+			transformIndexOffsetBuffer->isDynamic = false;
+			Gfx::CreateUAVBuffer( device, transformIndexOffsetBuffer, &resources );
+			Gfx::CreateSRVBuffer( device, transformIndexOffsetBuffer, &resources );
 
-	std::shared_ptr<DrawTask> drawCubeShadow = std::make_shared<DrawTask>();
-	std::shared_ptr<DrawTask> drawFloorShadow = std::make_shared<DrawTask>();
-	{
-		{
-			Gfx::Buffer* shadowCubeConstantBuffer = Gfx::AddBuffer( &resources );
-			Gfx::CreateConstantBuffer( device, shadowCubeConstantBuffer, &resources, &drawCubeShadow->drawConstants, 
-				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-			drawCubeShadow->dynamicBuffers.push_back( shadowCubeConstantBuffer );
+			indirectDrawArgsBuffer->numElements = numBatches;
+			indirectDrawArgsBuffer->structuredByteStride = sizeof( IndirectCommand );
+			indirectDrawArgsBuffer->isDynamic = false;
+			Gfx::CreateUAVBuffer( device, indirectDrawArgsBuffer, &resources );
 
-			Gfx::Buffer* shadowFloorConstantBuffer = Gfx::AddBuffer( &resources );
-			Gfx::CreateConstantBuffer( device, shadowFloorConstantBuffer, &resources, &drawFloorShadow->drawConstants, 
-				(sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
-			drawFloorShadow->dynamicBuffers.push_back( shadowFloorConstantBuffer );
+			transformBatchIdsBuffer->numElements = app->scene.transformCount;
+			transformBatchIdsBuffer->structuredByteStride = sizeof( int );
+			transformBatchIdsBuffer->isDynamic = false;
+			Gfx::CreateSRVBuffer( device, transformBatchIdsBuffer, &resources );
 		}
 
-		drawCubeShadow->model = drawTestCube->model;
-		drawFloorShadow->model = drawTestFloor->model;
+		std::shared_ptr<DrawTask> drawShadows = std::make_shared<DrawTask>();
+		{
+			Gfx::Buffer* shadowCameraData = Gfx::AddBuffer( &resources );
+			Gfx::CreateConstantBuffer( device, shadowCameraData, &resources, 
+				&drawShadows->drawConstants, (sizeof(CameraConstants) + 255 & ~255), sizeof( CameraConstants ) );
+			shadowCameraData->isDynamic = true;
+
+			drawShadows->pass = &app->scene.shadowPass;
+			drawShadows->constantBuffers.push_back( shadowCameraData );
+			drawShadows->readBuffers.push_back( transformBuffer );
+			drawShadows->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawShadows->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
+			drawShadows->initResources.pixelShaderName = nullptr;
+			drawShadows->clearDepth = true;
+			drawShadows->depthTest = true;
+			drawShadows->viewportWidth = shadowMapSize;
+			drawShadows->viewportHeight = shadowMapSize;
+			drawShadows->BindRenderTargets( {}, sunShadowMap, &resources );
+		}
+
+		if ( !Gfx::CreateDrawTask( app, drawShadows.get() ) )
+		{
+			return;
+		}
+
+		std::shared_ptr<ComputeTask> drawOpaqueCull = std::make_shared<ComputeTask>();
+		{
+			drawOpaqueCull->readBuffers.push_back( transformBuffer );
+			drawOpaqueCull->readBuffers.push_back( transformBatchIdsBuffer );
+			drawOpaqueCull->writeBuffers.push_back( transformIndexOffsetBuffer );
+			drawOpaqueCull->writeBuffers.push_back( indirectDrawArgsBuffer );
+			drawOpaqueCull->constantBuffers.push_back( cameraDataBuffer );
+			
+			unsigned int numElements = app->scene.opaquePass.batchIds.size();
+			drawOpaqueCull->initResources.csAssetName = "csCull.hlsl";
+			drawOpaqueCull->initResources.entryPoint = "main";
+			drawOpaqueCull->initResources.dispatchWidth = ( numElements + 63 ) / 64;
+			drawOpaqueCull->initResources.dispatchHeight = 1;
+		}
+
+		if ( !Gfx::CreateComputeTask( app, drawOpaqueCull.get() ) )
+		{
+			return;
+		}
+
+		std::shared_ptr<ComputeTask> clusterPointLights = std::make_shared<ComputeTask>();
+		{
+			clusterPointLights->readBuffers.push_back( scenePointLightsBuffer );
+			clusterPointLights->constantBuffers.push_back( cameraDataBuffer );
+			clusterPointLights->writeBuffers.push_back( sceneClustersBuffer );
+			clusterPointLights->writeBuffers.push_back( debugBboxBuffer );
+
+			const ClusterParams clusterParams = app->scene.clusterParams;
+
+			clusterPointLights->initResources.csAssetName = "csCluster.hlsl";
+			clusterPointLights->initResources.entryPoint = "cs_main";
+			clusterPointLights->initResources.dispatchWidth = ( clusterParams.numClustersX + 15 ) / 16;
+			clusterPointLights->initResources.dispatchHeight = ( clusterParams.numClustersY + 7 ) / 8;;
+			clusterPointLights->initResources.dispatchDepth = ( clusterParams.numClustersZ + 1 ) / 2;;
+		}
+
+		if ( !Gfx::CreateComputeTask( app, clusterPointLights.get() ) )
+		{
+			return;
+		}
+
+		// WARNING: UNUSED
+		std::shared_ptr<DrawTask> drawPrepass = std::make_shared<DrawTask>();
+		{
+			drawPrepass->pass = &app->scene.opaquePass;
+			drawPrepass->constantBuffers.push_back( cameraDataBuffer );
+			drawPrepass->readBuffers.push_back( transformBuffer );
+			drawPrepass->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawPrepass->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
+			drawPrepass->initResources.pixelShaderName = nullptr;
+			drawPrepass->clearDepth = true;
+			drawPrepass->depthTest = true;
+			drawPrepass->viewportWidth = screenWidth;
+			drawPrepass->viewportHeight = screenHeight;
+			drawPrepass->BindRenderTargets( {}, sceneDepthTexture, &resources );
+		}
+
+		if ( !Gfx::CreateDrawTask( app, drawPrepass.get() ) )
+		{
+			return;
+		}
 		
-		drawCubeShadow->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawCubeShadow->initResources.pixelShaderName = nullptr;
-		drawCubeShadow->clearDepth = true;
-		drawCubeShadow->depthTest = true;
-		drawCubeShadow->viewportWidth = shadowMapSize;
-		drawCubeShadow->viewportHeight = shadowMapSize;
-		drawCubeShadow->BindRenderTargets( {}, sunShadowMap, &resources );
-		
-		drawFloorShadow->initResources.vertexShaderName = "vsGeometry.hlsl";
-		drawFloorShadow->initResources.pixelShaderName = nullptr;
-		drawFloorShadow->clearDepth = false;
-		drawFloorShadow->depthTest = true;
-		drawFloorShadow->viewportWidth = shadowMapSize;
-		drawFloorShadow->viewportHeight = shadowMapSize;
-		drawFloorShadow->BindRenderTargets( {}, sunShadowMap, &resources );
+		std::shared_ptr<DrawTask> drawOpaque = std::make_shared<DrawTask>();
+		{
+			drawOpaque->pass = &app->scene.opaquePass;
+			drawOpaque->constantBuffers.push_back( cameraDataBuffer );
+			drawOpaque->readBuffers.push_back( transformBuffer );
+			drawOpaque->readBuffers.push_back( transformIndexOffsetBuffer );
+			drawOpaque->readBuffers.push_back( scenePointLightsBuffer );
+			drawOpaque->readBuffers.push_back( sceneClustersBuffer );
+			drawOpaque->readTextures.push_back( sunShadowMap );
+			drawOpaque->staticSamplers.push_back( bilinearSamplerClamp );
+			drawOpaque->staticSamplers.push_back( pcfShadowSampler );
+			drawOpaque->initResources.vertexShaderName = "vsIndirectGeometry.hlsl";
+			drawOpaque->initResources.pixelShaderName = "psLitGeometry.hlsl";
+			drawOpaque->clearRenderTarget = disableSky;
+			drawOpaque->clearDepth = true;
+			drawOpaque->depthTest = true;
+			drawOpaque->outputToBackBuffer = false;
+			drawOpaque->BindRenderTargets( { screenRenderTarget }, sceneDepthTexture, &resources );
+		}
+
+		if ( !Gfx::CreateDrawTask( app, drawOpaque.get() ) )
+		{
+			return;
+		}
+
+		// Culling
+		{
+			app->tasks.push_back( SrvToUav( transformIndexOffsetBuffer ) );
+			app->tasks.push_back( IndirectToUav( indirectDrawArgsBuffer ) );
+			app->tasks.push_back( clearDrawArgs( app, 
+				app->scene.opaquePass.indirectCommandBuffer, numBatches ) );
+			app->tasks.push_back( UavBarrier( indirectDrawArgsBuffer->resource ) );
+			app->tasks.push_back( drawOpaqueCull );
+			app->tasks.push_back( UavToIndirect( indirectDrawArgsBuffer ) );
+			app->tasks.push_back( UavToSrv( transformIndexOffsetBuffer ) );
+		}
+		// Light cluster gathering
+		if ( true )
+		{
+			app->tasks.push_back( SrvToUav( sceneClustersBuffer ) );
+			app->tasks.push_back( clusterPointLights );
+			app->tasks.push_back( UavToSrv( sceneClustersBuffer ) );
+		}
+
+		if ( !disableShadows )
+		{
+			app->tasks.push_back( drawShadows );
+		}
+		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
+		app->tasks.push_back( drawOpaque );
 	}
 
-	if ( !Gfx::CreateDrawTask( app, drawCubeShadow.get() ) )
-	{
-		return;
-	}
-	if ( !Gfx::CreateDrawTask( app, drawFloorShadow.get() ) )
-	{
-		return;
-	}
-
-	app->shadowTasks.push_back( drawCubeShadow );
-	app->shadowTasks.push_back( drawFloorShadow );
+	app->tasks.push_back( RtvToSrv( screenTexture ) );
 
 	Gfx::RenderTarget* debugRenderTarget = Gfx::AddRenderTarget( &resources );
-	// Gfx::Texture* scratchBuffer = Gfx::AddTexture( &resources );
 	std::shared_ptr<DrawTask> drawDebugView = std::make_shared<DrawTask>();
 	{
 		// Gfx::CreateReadTexture( device, scratchBuffer, &resources, screenWidth, screenHeight, DXGI_FORMAT_R8_UNORM, 1 );
@@ -250,7 +337,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		drawDebugView->depthTest = false;
 		drawDebugView->outputToBackBuffer = true;
 
-		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R16_UNORM, 1 );
+		Gfx::CreateReadTexture( device, sunShadowMap, &resources, screenWidth, screenHeight, DXGI_FORMAT_R32_FLOAT, 1 );
 		drawDebugView->readTextures.push_back( sunShadowMap );
 		drawDebugView->staticSamplers.push_back( bilinearSamplerClamp );
 
@@ -275,7 +362,13 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 	{
 		fxaa->readWriteTextures.push_back( outBuffer );
 		fxaa->readTextures.push_back( screenTexture );
-		fxaa->dynamicBuffers.push_back( cameraDataBuffer );
+		fxaa->constantBuffers.push_back( cameraDataBuffer );
+
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			fxaa->writeBuffers.push_back( scenePointLightsBuffer );
+		}
+
 		fxaa->staticSamplers.push_back( bilinearSamplerClamp );
 
 		fxaa->initResources.csAssetName = "csFxaa.hlsl";
@@ -284,34 +377,35 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		fxaa->initResources.dispatchHeight = ( screenHeight + 7) / 8;
 	}
 
-
-
 	if ( !Gfx::CreateComputeTask( app, fxaa.get() ) )
 	{
 		return;
 	}
 
+	if ( true )
 	{
-		// Geometry draw
-		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
-		
-		app->tasks.push_back( SrvToRtv( screenTexture ) );
-		app->tasks.push_back( drawSky );
-		app->tasks.push_back( drawTestCube );
-		app->tasks.push_back( drawTestFloor );
-		app->tasks.push_back( RtvToSrv( screenTexture ) );
-	}
-	{
-		// Post-processing
 		app->tasks.push_back( SrvToUav( outBuffer ) );
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			app->tasks.push_back( SrvToUav( scenePointLightsBuffer ) );
+		}
 		app->tasks.push_back( fxaa );
+		if ( makeLightsMoveHackByUsingFXAA )
+		{
+			app->tasks.push_back( UavToSrv( scenePointLightsBuffer ) );
+		}
 		app->tasks.push_back( UavToSrv( outBuffer ) );
 	}
+	else
+	{
+		outBuffer = screenTexture;
+	}
 	app->tasks.push_back( drawToScreen( app, outBuffer, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
+	if ( false )
 	{
 		app->tasks.push_back( drawDebugView );
-		app->tasks.push_back( SrvToDepth( sunShadowMap ) );
 	}
+	app->tasks.push_back( SrvToDepth( sunShadowMap ) );
 }
 
 void BuildTaskSystem( MinimalDXApp* app )

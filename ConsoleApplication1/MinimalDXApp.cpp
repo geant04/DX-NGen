@@ -7,6 +7,7 @@
 #include <iostream>
 #include <windowsx.h>
 #include "TaskSystem.h"
+#include <chrono>
 
 #define SIMPLE_TEST false
 
@@ -227,6 +228,19 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 		resources.swapChainOutputTexture = &resources.swapChainTextures[frameIndex];
 	}
 
+	{
+		device->CreateCommandAllocator( D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS( &uploadCommandAllocator ) );
+		device->CreateCommandList(
+			0, 
+			D3D12_COMMAND_LIST_TYPE_DIRECT, 
+			uploadCommandAllocator.Get(), 
+			nullptr,
+			IID_PPV_ARGS( &uploadCommandList )
+		);
+		uploadCommandList->Close();
+		device->CreateFence( 0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS( &uploadFence ) );
+	}
+
 	// Might need a reminder of commandAllocator's purpose?
 	device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
 
@@ -251,13 +265,26 @@ void MinimalDXApp::InitializeDX( const GlobalSettings& settings )
 
 		// set sun camera view proj matrix
 		const XMVECTOR target = XMVectorSet( 0.0f, 0.0f, 0.0f, 1.0f );
-		const float lightDistance = 20.0f;
+		const float lightDistance = 60.0f;
 		const XMVECTOR eye = XMVectorSubtract( target, XMVectorScale( sunDirection, lightDistance ) );
 		const XMVECTOR up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 		const XMMATRIX view = XMMatrixLookAtLH( eye, target, up );
-		const XMMATRIX projection = XMMatrixOrthographicLH( 24.0f, 24.0f, 1.0f, 50.0f );
+
+		const float shadowWorldWidth = 200.0f;
+		const float shadowWorldHeight = 200.0f;
+		const float shadowNearPlane = 0.1f;
+		const float shadowFarPlane = 150.0f;
+
+		const XMMATRIX projection = XMMatrixOrthographicLH(
+			shadowWorldWidth,
+			shadowWorldHeight,
+			shadowNearPlane,
+			shadowFarPlane
+		);
 
 		shadowCameraData.viewProj = view * projection;
+
+		PrepareScene( this );
 	}
 }
 
@@ -366,6 +393,8 @@ void MinimalDXApp::ProcessGameState()
 		const XMVECTOR& up  = XMLoadFloat4( &cameraData.up );
 		XMMATRIX view = XMMatrixLookAtLH( eye, at, up );
 		XMMATRIX projection = XMMatrixPerspectiveFovLH( fovY, aspectRatio, nearZ, farZ );
+		cameraData.view = view;
+		cameraData.proj = projection;
 		cameraData.viewProj = view * projection;
 
 		cameraConstants.resetPathTracer = resetPathTracer;
@@ -426,46 +455,49 @@ void MinimalDXApp::Render()
 	}
 	else
 	{
-		for ( auto& task : shadowTasks )
-		{	
-			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
-			{
-				if ( !drawTask->dynamicBuffers.empty() )
-				{
-					// update model matrix hack
-					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
-					*cb = cameraConstants;	// camera position, frame number, etc.
-					
-					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
-					const XMMATRIX& lightViewProj = shadowCameraData.viewProj;
-					const XMMATRIX lightModelViewProj = model * lightViewProj;
-					const XMMATRIX lightViewProjInverse = ( XMMatrixInverse( nullptr, lightViewProj ) );
-
-					XMStoreFloat4x4( &cb->modelViewProj, lightModelViewProj );
-					XMStoreFloat4x4( &cb->viewProjInverse,  lightViewProjInverse );
-				}
-			}
-			task->execute( commandList, commandAllocator, &resources );
-		}
 		for ( auto& task : tasks )
 		{	
 			if ( auto drawTask = std::dynamic_pointer_cast<DrawTask>( task ) )
 			{
-				if ( !drawTask->dynamicBuffers.empty() )
+				if ( !drawTask->constantBuffers.empty() && drawTask->constantBuffers[0]->isDynamic )
 				{
 					// update model matrix hack
-					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->dynamicBuffers[0]->cpuBufferData );
+					CameraConstants* cb = reinterpret_cast<CameraConstants*>( drawTask->constantBuffers[0]->cpuBufferData );
 					*cb = cameraConstants;	// camera position, frame number, etc.
 					
-					XMMATRIX model = XMLoadFloat4x4( &drawTask->model->transform.model );
-					const XMMATRIX& viewProj = cameraData.viewProj;
+					XMMATRIX model;
+					Camera* camera = &cameraData;
+
+					if ( drawTask->pass )
+					{
+						model = XMMatrixIdentity();
+						cb->numTransforms = drawTask->pass->batchIds.size();
+						cb->numLights = resources.pointLights.count;
+						
+						XMStoreUInt3( &cb->clusterDims, { 
+							static_cast<float>( scene.clusterParams.numClustersX ), 
+							static_cast<float>( scene.clusterParams.numClustersY ), 
+							static_cast<float>( scene.clusterParams.numClustersZ ) } );
+
+						camera = drawTask->pass->camera;
+					}
+					else
+					{
+						model = XMLoadFloat4x4( &drawTask->model->transform.model );
+					}
+
+					const XMMATRIX& viewProj = camera->viewProj;
 					const XMMATRIX modelViewProj = model * viewProj;
+
 					const XMMATRIX lightModelViewProj = model * shadowCameraData.viewProj;
 					const XMMATRIX viewProjInverse = ( XMMatrixInverse( nullptr, viewProj ) );
+					const XMMATRIX projInverse = XMMatrixInverse( nullptr, camera->proj );
 
 					XMStoreFloat4x4( &cb->modelViewProj, modelViewProj );
 					XMStoreFloat4x4( &cb->viewProjInverse, viewProjInverse );
 					XMStoreFloat4x4( &cb->lightViewProj, lightModelViewProj );
+					XMStoreFloat4x4( &cb->projInverse, projInverse );
+					XMStoreFloat4x4( &cb->view, camera->view );
 					XMStoreFloat3( &cb->sunDirection, sunDirection );
 				}
 			}
@@ -473,27 +505,27 @@ void MinimalDXApp::Render()
 		}
 	}
 	
-    // Transition back buffer to present
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        resources.swapChainTextures[frameIndex].resource.Get(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PRESENT
-    );
+	// Transition back buffer to present
+	barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+		resources.swapChainTextures[frameIndex].resource.Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_PRESENT
+	);
 
-    commandList->ResourceBarrier(1, &barrier);
+	commandList->ResourceBarrier(1, &barrier);
 
-    // Close and execute
-    commandList->Close();
+	// Close and execute
+	commandList->Close();
 
 	// ACTUAL rendering part
-    ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
-    commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
+	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-    // Present
-    swapChain->Present(1, 0);
+	// Present
+	swapChain->Present(1, 0);
 
-    // Wait for GPU to finish
-    WaitForPreviousFrame();
+	// Wait for GPU to finish
+	WaitForPreviousFrame();
 }
 
 void MinimalDXApp::Run()

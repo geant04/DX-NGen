@@ -1,10 +1,13 @@
 #pragma once
 
 #include "Common.h"
-#include "Task.h"
+// #include "Task.h"
 #include "Settings.h"
 #include "ResourceManager.h"
 #include "Camera.h"
+#include "Scene.h"
+
+class Task;
 
 struct WindowProperties
 {
@@ -49,6 +52,11 @@ struct MinimalDXApp
 	ComPtr<ID3D12CommandAllocator> commandAllocator;
 	ComPtr<IDXGISwapChain4> swapChain;
 
+	ComPtr<ID3D12CommandAllocator> uploadCommandAllocator;
+	ComPtr<ID3D12GraphicsCommandList> uploadCommandList;
+	ComPtr<ID3D12Fence> uploadFence;
+	std::vector<ComPtr<ID3D12Resource>> stagingBuffers;
+
 	// Resources
 	ComPtr<ID3D12DescriptorHeap> rtvDescriptorHeap;
 	ComPtr<ID3D12DescriptorHeap> shaderResourceHeap;
@@ -56,6 +64,8 @@ struct MinimalDXApp
 	ComPtr<ID3D12Resource> screenTextureUAV;
 
 	Gfx::Resources resources;
+
+	Scene scene;
 
 	ComPtr<ID3D12Fence> fence;
 	HANDLE fenceEvent;

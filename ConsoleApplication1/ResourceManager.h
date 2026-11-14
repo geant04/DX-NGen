@@ -7,6 +7,8 @@
 #include <vector>
 
 #define SWAPCHAIN_COUNT 2
+#define CLUSTERS_LIMIT 2048
+#define MAX_LIGHTS_IN_CLUSTER 128
 
 namespace Gfx
 {
@@ -83,9 +85,13 @@ namespace Gfx
 	struct Buffer
 	{
 		ComPtr<ID3D12Resource> resource;
+		ComPtr<ID3D12Resource> upload;
 
 		UINT sizeInBytes;
 		UINT cpuDataSize;
+
+		UINT numElements;
+		UINT structuredByteStride;
 
 		UINT8* mappedBufferData;
 		void* cpuBufferData;
@@ -93,6 +99,8 @@ namespace Gfx
 		DescriptorIndex srv;
 		DescriptorIndex uav;
 		DescriptorIndex cbv;
+
+		bool isDynamic = false;
 	};
 
 	struct Sampler
@@ -100,6 +108,52 @@ namespace Gfx
 		D3D12_FILTER filterMode;
 		D3D12_TEXTURE_ADDRESS_MODE addressMode;
 		D3D12_COMPARISON_FUNC comparisonFunc = D3D12_COMPARISON_FUNC_NONE;
+	};
+
+	template<typename T, int size>
+	struct ResourceBuffer
+	{
+		ResourceBuffer()
+			: buffer( size ), maxSize( size )
+		{
+		}
+
+		std::vector<T> buffer;
+		int count = 0;
+		int maxSize = 0;
+	};
+
+	struct RenderableObject
+	{
+		Transform transform = {};
+		Mesh* mesh;
+		uint32_t materialId = 0;
+		uint32_t globalIdx = 0;
+		bool isShadowCaster = false;
+	};
+
+	struct PointLight
+	{
+		XMFLOAT3 worldPosition = {};
+		float squaredRadius = 0.0f;
+		XMFLOAT3 color = {};
+		uint32_t globalIdx = 0; 
+		// globalIdx could be inherited from a Resource struct of some sort
+		// globalIdx is required to exist as a member var becausee of our AddToResourceBuffer funcs
+	};
+
+	struct Cluster
+	{
+		int lightIndices[MAX_LIGHTS_IN_CLUSTER];
+		int numLights = 0;
+		uint32_t globalIdx = 0;
+	};
+
+	struct ClusterBBOX
+	{
+		XMFLOAT3 min;
+		XMFLOAT3 max;
+		uint32_t globalIdx;
 	};
 
 	struct Resources
@@ -159,12 +213,20 @@ namespace Gfx
 		Texture swapChainTextures[SWAPCHAIN_COUNT];
 		Texture* swapChainOutputTexture;
 		
+		// TODO: Move these resources to the heap via my template solution
 		RenderTarget renderTargets[10];
 		Texture textures[100];
 		Buffer buffers[100];
 		Sampler samplers[100];
 		Model models[10];
 		Mesh meshes[10];
+
+		// It's probably worth adding some "scene-loading" feature at some point,
+		// but if you want the true shabang, render: 2000000# of renderableObjects
+		ResourceBuffer<RenderableObject, 1000000> renderableObjects;
+		ResourceBuffer<PointLight, 1024> pointLights;
+		ResourceBuffer<Cluster, CLUSTERS_LIMIT> pointLightClusters;
+		ResourceBuffer<ClusterBBOX, CLUSTERS_LIMIT> debugClusterBBOX;
 
 		uint32_t textureCount = 0;
 		uint32_t bufferCount = 0;
@@ -206,6 +268,10 @@ namespace Gfx
 
 	bool CreateConstantBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources, void* data, const UINT sizeInBytes, const UINT cpuDataSize );
 
+	bool CreateSRVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources );
+
+	bool CreateUAVBuffer( ComPtr<ID3D12Device> device, Buffer* buffer, Resources* resources );
+
 	bool CreateDepthTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
 
 	bool CreateStencilTexture( ComPtr<ID3D12Device> device, Texture* texture, Resources* resources, uint32_t width, uint32_t height, DXGI_FORMAT format, uint32_t mips );
@@ -218,4 +284,15 @@ namespace Gfx
 	Mesh* AddMesh( Resources* resources );
 	Model* AddModel( Resources* resources );
 	RenderTarget* AddRenderTarget( Resources* resources );
+	// RenderableObject* AddRenderableObject( Resources* resources );
+
+	template<typename T, int size>
+	T* AddToResourceBuffer( ResourceBuffer<T, size>* resourceBuffer )
+	{
+		uint32_t globalIdx = resourceBuffer->count;
+		resourceBuffer->buffer[globalIdx].globalIdx = globalIdx;
+
+		return &resourceBuffer->buffer[resourceBuffer->count++];
+	}
+
 } // namespace ResourceManager

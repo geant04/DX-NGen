@@ -26,33 +26,53 @@ void BuildRootSignature( ComPtr<ID3D12Device> device, Task* task )
 	int descriptorRootParamsCount = 0;
 	int readTexturesCount = task->readTextures.size();
 	int readWriteTexturesCount = task->readWriteTextures.size();
-	int dynamicBuffersCount = task->dynamicBuffers.size();
+	int constantBuffersCount = task->constantBuffers.size();
+	int readBuffersCount = task->readBuffers.size();
+	int writeBuffersCount = task->writeBuffers.size();
 	int staticSamplersCount = task->staticSamplers.size();
 
 	if ( readTexturesCount > 0 )
 	{
 		// t0
 		descriptorRanges.push_back({});
-		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readTexturesCount, 0, 0);
+		descriptorRanges[descriptorRangeCount].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readTexturesCount, 0, 0 );
 
 		rootParameters.push_back({});
 		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+	if ( readBuffersCount > 0 )
+	{
+		// t0, space1
+		descriptorRanges.push_back( {} );
+		descriptorRanges[descriptorRangeCount].Init( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, readBuffersCount, 0, 1 );
+
+		rootParameters.push_back( {} );
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable( 1, &descriptorRanges[descriptorRangeCount++] );
 	}
 	if ( readWriteTexturesCount > 0 )
 	{
 		// u0
 		descriptorRanges.push_back({});
-		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, readWriteTexturesCount, 0, 0);
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, readWriteTexturesCount, 0, 0 );
+		
+		rootParameters.push_back({});
+		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
+	}
+	if ( writeBuffersCount > 0 )
+	{
+		// u0, space
+		descriptorRanges.push_back({});
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, writeBuffersCount, 0, 1 );
 		
 		rootParameters.push_back({});
 		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
 	}
 	// add support for normal buffers
-	if ( dynamicBuffersCount > 0 )
+	if ( constantBuffersCount > 0 )
 	{
 		// b0
 		descriptorRanges.push_back({});
-		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, dynamicBuffersCount, 0, 0);
+		descriptorRanges[descriptorRangeCount].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, constantBuffersCount, 0, 0);
 		
 		rootParameters.push_back({});
 		rootParameters[descriptorRootParamsCount++].InitAsDescriptorTable(1, &descriptorRanges[descriptorRangeCount++] );
