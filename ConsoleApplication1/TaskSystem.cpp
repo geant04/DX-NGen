@@ -23,8 +23,8 @@ static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* 
 
 		pathTraceTask->initResources.csAssetName = "csPathTracer.hlsl";
 		pathTraceTask->initResources.entryPoint = "CSMain";
-		pathTraceTask->initResources.dispatchWidth = ( screenWidth + 7) / 8; // hardcoded (8, 8, 1) dims
-		pathTraceTask->initResources.dispatchHeight = ( screenHeight + 7) / 8;
+		pathTraceTask->initResources.dispatchWidth = ( screenWidth + 7 ) / 8; // hardcoded (8, 8, 1) dims
+		pathTraceTask->initResources.dispatchHeight = ( screenHeight + 7 ) / 8;
 	}
 
 	if ( !Gfx::CreateComputeTask( app, pathTraceTask.get() ) )
@@ -32,7 +32,6 @@ static void BuildPathtracerTaskSystemInternal( MinimalDXApp* app, Gfx::Texture* 
 		return;
 	}
 
-	// Temp disabling these tasks and only pushing drawScreen, which now does "draw cube" actually
 	app->pathTracingTasks.push_back( pathTraceTask );
 	app->pathTracingTasks.push_back( UavToSrv(  inOutTexture ) );
 	app->pathTracingTasks.push_back( drawToScreen( app, inOutTexture, bilinearSamplerClamp, cameraDataBuffer, screenRenderTarget ) );
@@ -106,11 +105,6 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 		cameraDataBuffer, 
 		screenWidth, screenHeight );
 
-	// Shadow draw tasks... Need to refactor this in such a way that:
-	// 1. let every object have a shadowCaster flag or something
-	// 2. process all geometry separately and automatically generate draw tasks from there
-	// 3. if above works, then the same logic maps for shadows
-	// This is a temporary hack because I want to say "I added shadow maps!" to my engine.
 	const unsigned int shadowMapSize = 2048;
 	Gfx::Texture* sunShadowMap = Gfx::AddTexture( &resources );
 	Gfx::CreateDepthTexture( device, sunShadowMap, &resources, shadowMapSize, shadowMapSize, DXGI_FORMAT_D32_FLOAT, 1 );
@@ -255,6 +249,7 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			return;
 		}
 
+		// WARNING: UNUSED
 		std::shared_ptr<DrawTask> drawPrepass = std::make_shared<DrawTask>();
 		{
 			drawPrepass->pass = &app->scene.opaquePass;
@@ -324,8 +319,6 @@ static void BuildTaskSystemInternal( MinimalDXApp* app )
 			app->tasks.push_back( drawShadows );
 		}
 		app->tasks.push_back( DepthToSrv( sunShadowMap ) );
-		
-		// app->tasks.push_back( drawPrepass );
 		app->tasks.push_back( drawOpaque );
 	}
 

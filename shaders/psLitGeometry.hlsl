@@ -197,38 +197,6 @@ float shadow = 0.0f;
 #endif
 	
 #if DEBUG_CLUSTERS
-	// Convert sv_position to cluster position
-#if 0
-	float2 uv = float2( input.position.x * data.invScreenWidth, input.position.y * data.invScreenHeight );
-	uint x = uint( uv.x * float( data.clusterDims.x ) );
-	uint y = uint( uv.y * float( data.clusterDims.y ) );
-	
-	float depth = input.position.z;
-	float linearViewZ = LinearizeDepth( depth );
-
-	// new debug lol sorry
-	float numSlices = float( data.clusterDims.z );
-	const float near = 0.1f;
-	const float far = 1000.0f;
-	const float scale = ( numSlices / log( far / near ) );
-	const float bias = ( ( numSlices * log( near ) ) / log( far / near ) );
-	uint z = log( linearViewZ ) * scale - bias;
-	
-	float3 colors[8] = { 
-		float3( 0.0f, 0.0f, 0.0f ),
-		float3( 0.0f, 0.0f, 1.0f ),
-		float3( 0.0f, 1.0f, 0.0f ),
-		float3( 0.0f, 1.0f, 1.0f ),
-		float3( 1.0f, 0.0f, 0.0f ),
-		float3( 1.0f, 0.0f, 1.0f ),
-		float3( 1.0f, 1.0f, 0.0f ),
-		float3( 1.0f, 1.0f, 1.0f )
-	};
-	
-	float3 debugColor = colors[z % 8];
-	uint numLights = pointLightClusters[x + (y * data.clusterDims.x) + z * ( data.clusterDims.x * data.clusterDims.y )].numLights;
-	
-#endif
 	float numLights01 = ( float( numLights ) / MAX_LIGHTS_IN_CLUSTER );
 	
 	float3 colorLevels[4] =
